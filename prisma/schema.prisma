@@ -1,0 +1,47 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Livro {
+  id          Int         @id @default(autoincrement())
+  titulo      String
+  autor       String
+  quantidade  Int         @default(1)
+  emprestimos Emprestimo[]
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@map("livros")
+}
+
+model Aluno {
+  id          Int         @id @default(autoincrement())
+  nome        String
+  email       String      @unique
+  matricula   String      @unique
+  emprestimos Emprestimo[]
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@map("alunos")
+}
+
+model Emprestimo {
+  id             Int      @id @default(autoincrement())
+  alunoId        Int      @map("aluno_id")
+  livroId        Int      @map("livro_id")
+  dataEmprestimo DateTime @default(now()) @map("data_emprestimo")
+  dataDevolucao  DateTime @map("data_devolucao")
+  devolvido      Boolean  @default(false)
+  aluno          Aluno    @relation(fields: [alunoId], references: [id])
+  livro          Livro    @relation(fields: [livroId], references: [id])
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("emprestimos")
+}
