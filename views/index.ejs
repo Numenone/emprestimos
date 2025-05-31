@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Sistema de Biblioteca</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Biblioteca Digital</h1>
+    
+    <% if (typeof success !== 'undefined' && success) { %>
+      <div class="alert alert-success">
+        <%= success %>
+      </div>
+    <% } %>
+
+    <% if (typeof error !== 'undefined' && error) { %>
+        <div class="alert alert-danger">
+          <% if (typeof error === 'string') { %>
+            <%= error %>
+          <% } else { %>
+            Erro ao processar requisição
+          <% } %>
+        </div>
+      <% } %>
+
+    <!-- Seção de Alunos -->
+    <section>
+      <h2>Cadastrar Aluno</h2>
+      <form action="/alunos" method="POST" enctype="application/x-www-form-urlencoded">
+        <input type="text" name="nome" placeholder="Nome" required>
+        <input type="email" name="email" placeholder="E-mail" required>
+        <input type="text" name="matricula" placeholder="Matrícula" required>
+        <button type="submit">Cadastrar</button>
+      </form>
+
+      <h3>Alunos Cadastrados</h3>
+      <% if (alunos && alunos.length > 0) { %>
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>E-mail</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% alunos.forEach(aluno => { %>
+              <tr>
+                <td><%= aluno.nome %></td>
+                <td><%= aluno.email %></td>
+                <td>
+                  <form action="/alunos/<%= aluno.id %>/email" method="POST" style="display: inline;">
+                    <button type="submit">Enviar E-mail</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p>Nenhum aluno cadastrado.</p>
+      <% } %>
+    </section>
+
+    <!-- Seção de Livros -->
+    <section>
+      <h2>Cadastrar Livro</h2>
+      <form id="livroForm" action="/livros" method="POST" enctype="application/x-www-form-urlencoded">
+        <input type="text" name="titulo" placeholder="Título" required>
+        <input type="text" name="autor" placeholder="Autor" required>
+        <input type="number" name="quantidade" placeholder="Quantidade" min="1" required>
+        <button type="submit">Cadastrar</button>
+      </form>
+
+      <h3>Livros Cadastrados</h3>
+      <% if (livros && livros.length > 0) { %>
+        <table>
+          <thead>
+            <tr>
+              <th>Título</th>
+              <th>Autor</th>
+              <th>Quantidade</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% livros.forEach(livro => { %>
+              <tr>
+                <td><%= livro.titulo %></td>
+                <td><%= livro.autor %></td>
+                <td><%= livro.quantidade %></td>
+                <td>
+                    <button onclick="openEditModal(<%= livro.id %>, '<%= livro.titulo %>', '<%= livro.autor %>', <%= livro.quantidade %>)" class="btn-edit">Editar</button>
+                  </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      <% } else { %>
+        <p>Nenhum livro cadastrado.</p>
+      <% } %>
+
+    <!-- Seção de Empréstimos -->
+    <section>
+        <h2>Registrar Empréstimo</h2>
+        <form id="emprestimoForm" action="/emprestimos" method="POST">
+          <select name="alunoId" required>
+            <option value="">Selecione um aluno</option>
+            <% alunos && alunos.forEach(aluno => { %>
+              <option value="<%= aluno.id %>"><%= aluno.nome %></option>
+            <% }); %>
+          </select>
+          <select name="livroId" required>
+            <option value="">Selecione um livro</option>
+            <% livros && livros.forEach(livro => { %>
+              <option value="<%= livro.id %>"><%= livro.titulo %></option>
+            <% }); %>
+          </select>
+          <input type="date" name="dataDevolucao" required>
+          <button type="submit">Registrar</button>
+        </form>
+      
+        <h3>Empréstimos Ativos</h3>
+        <% if (emprestimos && emprestimos.length > 0) { %>
+          <table id="tabela-emprestimos">
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>Livro</th>
+                <th>Data Devolução</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% emprestimos.forEach(emp => { %>
+                <tr>
+                  <td><%= emp.aluno?.nome %></td>
+                  <td><%= emp.livro?.titulo %></td>
+                  <td><%= new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') %></td>
+                  <td>
+                    <form action="/emprestimos/<%= emp.id %>/devolver" method="POST">
+                      <button type="submit">Devolver</button>
+                    </form>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } else { %>
+          <p>Nenhum empréstimo ativo no momento.</p>
+        <% } %>
+
+        
+<div id="editModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>Editar Livro</h2>
+      <form id="editLivroForm" class="modal-form">
+        <input type="hidden" id="editLivroId">
+        <input type="text" id="editTitulo" placeholder="Título" required>
+        <input type="text" id="editAutor" placeholder="Autor" required>
+        <input type="number" id="editQuantidade" placeholder="Quantidade" min="1" required>
+        <button type="submit">Salvar Alterações</button>
+      </form>
+    </div>
+  </div>
+
+    <script>
+      // AJAX para o formulário de empréstimos
+      document.getElementById('emprestimoForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  
+  try {
+    // Garantir que a data está no formato correto
+    const dataInput = form.dataDevolucao.value;
+    const dataDevolucao = new Date(dataInput);
+    
+    if (isNaN(dataDevolucao.getTime())) {
+      throw new Error('Data de devolução inválida');
+    }
+
+    const response = await fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        alunoId: Number(form.alunoId.value),
+        livroId: Number(form.livroId.value),
+        dataDevolucao: dataDevolucao.toISOString() // Envia no formato ISO
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erro ao processar empréstimo');
+    }
+
+    // Força recarregamento completo
+    window.location.href = '/?success=Empréstimo registrado com sucesso';
+    window.location.reload();
+  } catch (error) {
+    console.error('Erro no frontend:', error);
+    window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+  }
+});
+
+      // AJAX para o formulário de livros
+      document.getElementById('livroForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  
+  try {
+    const formData = {
+      titulo: form.titulo.value,
+      autor: form.autor.value,
+      quantidade: form.quantidade.value
+    };
+
+    const response = await fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(formData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erro ao cadastrar livro');
+    }
+
+    // Força recarregamento completo da página
+    window.location.href = '/?success=Livro cadastrado com sucesso';
+    window.location.reload();
+  } catch (error) {
+    window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+  }
+});
+
+      // AJAX para o formulário de alunos
+      document.querySelector('form[action="/alunos"]').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new URLSearchParams(new FormData(form));
+
+  try {
+    const response = await fetch(form.action, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData
+    });
+
+    if (response.redirected) {
+      window.location.href = response.url;
+    } else {
+      const result = await response.json();
+      if (result.success) {
+        window.location.href = '/?success=Aluno cadastrado com sucesso';
+      } else {
+        alert(result.error || 'Erro ao cadastrar aluno');
+      }
+    }
+  } catch (error) {
+    console.error('Erro:', error);
+    alert('Erro na conexão com o servidor');
+  }
+});
+      const modal = document.getElementById("editModal");
+const span = document.getElementsByClassName("close")[0];
+
+// Função para abrir o modal com os dados do livro
+function openEditModal(id, titulo, autor, quantidade) {
+  document.getElementById("editLivroId").value = id;
+  document.getElementById("editTitulo").value = titulo;
+  document.getElementById("editAutor").value = autor;
+  document.getElementById("editQuantidade").value = quantidade;
+  modal.style.display = "block";
+}
+
+// Fechar o modal quando clicar no X
+span.onclick = function() {
+  modal.style.display = "none";
+}
+
+// Fechar o modal quando clicar fora dele
+window.onclick = function(event) {
+  if (event.target == modal) {
+    modal.style.display = "none";
+  }
+}
+
+// Formulário de edição
+document.getElementById("editLivroForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  
+  const livroData = {
+    titulo: document.getElementById("editTitulo").value,
+    autor: document.getElementById("editAutor").value,
+    quantidade: parseInt(document.getElementById("editQuantidade").value)
+  };
+
+  const livroId = document.getElementById("editLivroId").value;
+
+  try {
+    const response = await fetch(`/livros/${livroId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams(livroData)
+    });
+
+    if (response.redirected) {
+      window.location.href = response.url;
+      return;
+    }
+
+    const result = await response.text();
+    try {
+      // Tenta parsear como JSON
+      const data = JSON.parse(result);
+      if (data.success) {
+        window.location.href = '/?success=Livro atualizado com sucesso';
+      } else {
+        alert(data.error || 'Erro ao atualizar livro');
+      }
+    } catch {
+      // Se não for JSON, assume que é HTML/redirect
+      window.location.href = response.url;
+    }
+  } catch (error) {
+    console.error('Erro:', error);
+    alert('Erro na conexão com o servidor');
+  }
+});
+
+
+    </script>
+
+  </div>
+</body>
+</html>

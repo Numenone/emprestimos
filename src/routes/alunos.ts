@@ -4,19 +4,17 @@ import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 
-dotenv.config(); // Carrega variáveis do .env
+dotenv.config();
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Schema de validação
 const alunoSchema = z.object({
   nome: z.string().min(3),
   email: z.string().email(),
   matricula: z.string().min(5)
 });
 
-// Configuração do Mailtrap
 const transporter = nodemailer.createTransport({
   host: "sandbox.smtp.mailtrap.io",
   port: 2525,
@@ -26,65 +24,113 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Rota GET para listar alunos
+// GET todos os alunos
 router.get("/", async (req, res) => {
   try {
     const alunos = await prisma.aluno.findMany();
     res.json(alunos);
   } catch (error) {
-    res.status(500).json({ error });
+    res.status(500).json({ 
+      error: "Erro ao buscar alunos",
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
-// Rota POST para criar aluno
+// POST criar aluno
 router.post("/", async (req, res) => {
+  console.log('Dados recebidos no backend:', req.body);
+  
   const valida = alunoSchema.safeParse(req.body);
+  
   if (!valida.success) {
-    return res.status(400).json({ error: valida.error });
+    console.log('Erro de validação:', valida.error.errors);
+    return res.status(400).json({ 
+      error: "Dados inválidos",
+      details: valida.error.errors.map(e => `${e.path}: ${e.message}`).join(', ')
+    });
   }
 
   try {
-    const aluno = await prisma.aluno.create({ data: valida.data });
+    const aluno = await prisma.aluno.create({ 
+      data: valida.data 
+    });
     res.status(201).json(aluno);
   } catch (error) {
-    res.status(400).json({ error });
+    console.error('Erro no banco de dados:', error);
+    res.status(400).json({
+      error: "Erro ao criar aluno",
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
-router.post('/:id/email', async (req, res) => {
+// PUT atualizar aluno completo
+router.put("/:id", async (req, res) => {
+  const valida = alunoSchema.safeParse(req.body);
+  
+  if (!valida.success) {
+    return res.status(400).json({ 
+      error: "Dados inválidos",
+      details: valida.error.errors
+    });
+  }
+
   try {
-    // 1. Busca o aluno com seus empréstimos ATIVOS (não devolvidos)
+    const aluno = await prisma.aluno.update({
+      where: { id: Number(req.params.id) },
+      data: valida.data
+    });
+    res.status(200).json(aluno);
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Erro ao atualizar aluno",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// PATCH atualizar parcialmente aluno
+router.patch("/:id", async (req, res) => {
+  try {
+    const aluno = await prisma.aluno.update({
+      where: { id: Number(req.params.id) },
+      data: req.body
+    });
+    res.status(200).json(aluno);
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Erro ao atualizar aluno",
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// POST enviar e-mail com empréstimos ativos
+router.post("/:id/email", async (req, res) => {
+  try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) },
       include: {
         emprestimos: {
-          where: { 
-            devolvido: false // Filtra apenas empréstimos ativos
-          },
-          include: { 
-            livro: true // Inclui os dados completos do livro
-          },
-          orderBy: {
-            dataDevolucao: 'asc' // Ordena por data de devolução
-          }
+          where: { devolvido: false },
+          include: { livro: true },
+          orderBy: { dataDevolucao: 'asc' }
         }
       }
     });
 
-    // 2. Verifica se o aluno existe
     if (!aluno) {
       return res.status(404).json({ error: 'Aluno não encontrado' });
     }
 
-    // 3. Verifica se há empréstimos ativos
     if (aluno.emprestimos.length === 0) {
       return res.json({ 
-        message: 'Aluno não possui empréstimos ativos no momento',
+        message: 'Aluno não possui empréstimos ativos',
         alunoId: aluno.id
       });
     }
 
-    // 4. Gera o conteúdo do e-mail (com verificação adicional)
     const html = `
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
@@ -101,7 +147,6 @@ router.post('/:id/email', async (req, res) => {
           </thead>
           <tbody>
             ${aluno.emprestimos.map(emp => {
-              // Verificação adicional para garantir que o livro existe
               const livro = emp.livro || { titulo: 'Livro não encontrado', autor: 'N/A' };
               return `
                 <tr>
@@ -117,29 +162,23 @@ router.post('/:id/email', async (req, res) => {
       </div>
     `;
 
-    // 5. Envia o e-mail
     const info = await transporter.sendMail({
-      from: process.env.MAILTRAP_FROM,
+      from: process.env.MAILTRAP_FROM || '"Biblioteca" <biblioteca@example.com>',
       to: aluno.email,
       subject: `[Biblioteca] Empréstimos Ativos - ${aluno.nome}`,
       html: html
     });
 
-    // 6. Log para debug (opcional)
-    console.log('E-mail enviado para Mailtrap:', {
-      alunoId: aluno.id,
-      totalEmprestimos: aluno.emprestimos.length,
-      mailtrapId: info.messageId
-    });
+    console.log('E-mail enviado:', info.messageId);
 
     res.json({
       success: true,
-      message: `E-mail com ${aluno.emprestimos.length} empréstimos enviado para ${aluno.email}`,
-      mailtrapUrl: "https://mailtrap.io/inboxes"
+      message: `E-mail enviado para ${aluno.email}`,
+      emprestimos: aluno.emprestimos.length
     });
 
   } catch (error) {
-    console.error('Erro detalhado:', error);
+    console.error('Erro:', error);
     res.status(500).json({
       error: 'Falha ao enviar e-mail',
       details: error instanceof Error ? error.message : String(error)
