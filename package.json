@@ -1,26 +1,10 @@
 {
-  "name": "biblioteca",
-  "version": "1.0.0",
+  "name": "biblioteca-fullstack",
   "scripts": {
-    "start": "ts-node src/app.ts",
-    "dev": "nodemon src/app.ts",
-    "build": "tsc",
-    "prisma:migrate": "prisma migrate dev --name init",
-    "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio",
-    "backend": "ts-node src/server.ts"
-  },
-  "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "axios": "^1.9.0",
-    "biblioteca": "file:",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "ejs": "^3.1.10",
-    "express": "^4.18.2",
-    "nodemailer": "^7.0.3",
-    "zod": "^3.25.42"
+    "start:backend": "cd backend && npm run dev",
+    "start:frontend": "cd frontend && npm start",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "install:all": "cd backend && npm install && cd ../frontend && npm install"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
@@ -31,5 +15,18 @@
     "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.9.0",
+    "biblioteca": "file:",
+    "biblioteca-fullstack": "file:",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "ejs": "^3.1.10",
+    "express": "^4.18.2",
+    "nodemailer": "^7.0.3",
+    "zod": "^3.25.42"
   }
 }
