@@ -35,7 +35,8 @@ app.set('views', viewsPath);
 app.use('/alunos', alunosRouter);
 app.use('/livros', livrosRouter);
 app.use('/emprestimos', emprestimosRouter);
-
+app.use(methodOverride('_method'));
+app.use(express.urlencoded({ extended: true }));
 
 
 // Rota principal que renderiza a página
@@ -120,18 +121,39 @@ app.post('/emprestimos/:id/devolver', async (req, res) => {
 });
 
 app.put('/livros/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const { titulo, autor, quantidade } = req.body;
+
+  if (!titulo || !autor || !quantidade || isNaN(id)) {
+    return res.status(400).render('index', {
+      error: 'Dados inválidos para edição.',
+      success: null,
+      alunos: await prisma.aluno.findMany(),
+      livros: await prisma.livro.findMany(),
+      emprestimos: await prisma.emprestimo.findMany({ include: { aluno: true, livro: true } })
+    });
+  }
+
   try {
     await prisma.livro.update({
-      where: { id: parseInt(req.params.id) },
+      where: { id },
       data: {
-        titulo: req.body.titulo,
-        autor: req.body.autor,
-        quantidade: parseInt(req.body.quantidade)
+        titulo,
+        autor,
+        quantidade: parseInt(quantidade)
       }
     });
-    res.redirect('/?success=Livro atualizado com sucesso');
-  } catch (error) {
-    res.redirect('/?error=Erro ao atualizar livro');
+
+    res.redirect('/'); // Redireciona após o sucesso
+  } catch (err) {
+    console.error('Erro ao editar livro:', err);
+    res.status(500).render('index', {
+      error: 'Erro interno ao editar livro.',
+      success: null,
+      alunos: await prisma.aluno.findMany(),
+      livros: await prisma.livro.findMany(),
+      emprestimos: await prisma.emprestimo.findMany({ include: { aluno: true, livro: true } })
+    });
   }
 });
 

@@ -77,7 +77,9 @@
                 <td><%= livro.quantidade %></td>
                 <td>
                   <!-- Botão que abre o modal (ver abaixo, continua JavaScript para modal) -->
-                  <button type="button" onclick="openEditModal(<%= livro.id %>, '<%= livro.titulo %>', '<%= livro.autor %>', <%= livro.quantidade %>)">Editar</button>
+                  <button type="button" onclick='openEditModal(<%= livro.id %>, "<%- livro.titulo %>", "<%- livro.autor %>", <%= livro.quantidade %>)'>Editar</button>
+                  <form action="/livros/<%= livro.id %>?_method=DELETE" method="POST" style="display: inline;">
+                    <button type="submit">Excluir</button>
                 </td>
               </tr>
             <% }); %>
@@ -135,8 +137,8 @@
       <div class="modal-content">
         <span class="close" style="cursor:pointer;">&times;</span>
         <h2>Editar Livro</h2>
-        <form action="/livros/<%= livro.id %>?_method=PUT" method="POST">
-          <!-- Usar método POST com override para PUT no backend (ex: middleware method-override) -->
+        <form id="editLivroForm" action="/livros/0?_method=PUT" method="POST">
+          <!-- Necessário para que Express entenda PUT -->
           <input type="hidden" name="_method" value="PUT">
           <input type="hidden" id="editLivroId" name="id">
           <input type="text" id="editTitulo" name="titulo" placeholder="Título" required>
@@ -149,22 +151,43 @@
 
     <!-- Scripts para controle do modal (somente para UX, não interfere no submit) -->
     <script>
-      const modal = document.getElementById("editModal");
-      const span = modal.querySelector(".close");
-      const editForm = document.getElementById("editLivroForm");
+       const modal = document.getElementById("editModal");
+  const span = modal.querySelector(".close");
+  const editForm = document.getElementById("editLivroForm");
 
-      function openEditModal(id, titulo, autor, quantidade) {
-        document.getElementById("editLivroId").value = id;
-        document.getElementById("editTitulo").value = titulo;
-        document.getElementById("editAutor").value = autor;
-        document.getElementById("editQuantidade").value = quantidade;
-        editForm.action = `/livros/${id}`;  // seta a URL de edição para o form
-        modal.style.display = "block";
-      }
+  function openEditModal(id, titulo, autor, quantidade) {
+    // Preencher os campos do formulário com os dados do livro
+    document.getElementById("editLivroId").value = id;
+    document.getElementById("editTitulo").value = titulo;
+    document.getElementById("editAutor").value = autor;
+    document.getElementById("editQuantidade").value = quantidade;
 
-      span.onclick = () => { modal.style.display = "none"; };
-      window.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
-    </script>
+    // Atualizar o action do form com o ID correto
+    editForm.action = `/livros/${id}?_method=PUT`;
+
+    // Mostrar o modal
+    modal.style.display = "block";
+  }
+
+  // Fechar o modal ao clicar no "X"
+  span.onclick = () => {
+    modal.style.display = "none";
+  };
+
+  // Fechar o modal ao pressionar a tecla "Esc"
+  window.onkeydown = (event) => {
+    if (event.key === "Escape") {
+      modal.style.display = "none";
+    }
+  };
+
+  // Fechar o modal ao clicar fora da área do modal
+  window.onclick = (event) => {
+    if (event.target === modal) {
+      modal.style.display = "none";
+    }
+  };
+  </script>
   </div>
 </body>
 </html>
