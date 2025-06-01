@@ -76,7 +76,8 @@
                 <td><%= livro.autor %></td>
                 <td><%= livro.quantidade %></td>
                 <td>
-                  <button onclick="openEditModal(<%= livro.id %>, '<%= livro.titulo %>', '<%= livro.autor %>', <%= livro.quantidade %>)">Editar</button>
+                  <!-- Botão que abre o modal (ver abaixo, continua JavaScript para modal) -->
+                  <button type="button" onclick="openEditModal(<%= livro.id %>, '<%= livro.titulo %>', '<%= livro.autor %>', <%= livro.quantidade %>)">Editar</button>
                 </td>
               </tr>
             <% }); %>
@@ -130,131 +131,39 @@
     </section>
 
     <!-- Modal de Edição de Livro -->
-    <div id="editModal" class="modal" role="dialog" aria-modal="true">
+    <div id="editModal" class="modal" role="dialog" aria-modal="true" style="display:none;">
       <div class="modal-content">
-        <span class="close">&times;</span>
+        <span class="close" style="cursor:pointer;">&times;</span>
         <h2>Editar Livro</h2>
-        <form id="editLivroForm">
-          <input type="hidden" id="editLivroId">
-          <input type="text" id="editTitulo" placeholder="Título" required>
-          <input type="text" id="editAutor" placeholder="Autor" required>
-          <input type="number" id="editQuantidade" placeholder="Quantidade" min="1" required>
+        <form id="editLivroForm" action="" method="POST">
+          <!-- Usar método POST com override para PUT no backend (ex: middleware method-override) -->
+          <input type="hidden" name="_method" value="PUT">
+          <input type="hidden" id="editLivroId" name="id">
+          <input type="text" id="editTitulo" name="titulo" placeholder="Título" required>
+          <input type="text" id="editAutor" name="autor" placeholder="Autor" required>
+          <input type="number" id="editQuantidade" name="quantidade" placeholder="Quantidade" min="1" required>
           <button type="submit">Salvar Alterações</button>
         </form>
       </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts para controle do modal (somente para UX, não interfere no submit) -->
     <script>
-      // Submissão do formulário de alunos
-      document.getElementById('alunoForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const dados = {
-          nome: form.nome.value,
-          email: form.email.value,
-          matricula: form.matricula.value
-        };
-
-        try {
-          const response = await fetch(form.action, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dados)
-          });
-
-          if (!response.ok) throw new Error('Erro ao cadastrar aluno');
-          window.location.href = '/?success=Aluno cadastrado com sucesso';
-        } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
-        }
-      });
-
-      // Submissão do formulário de livros
-      document.getElementById('livroForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const form = e.target;
-        const dados = {
-          titulo: form.titulo.value,
-          autor: form.autor.value,
-          quantidade: parseInt(form.quantidade.value)
-        };
-
-        try {
-          const response = await fetch(form.action, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dados)
-          });
-
-          if (!response.ok) throw new Error('Erro ao cadastrar livro');
-          window.location.href = '/?success=Livro cadastrado com sucesso';
-        } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
-        }
-      });
-
-      // Submissão do formulário de empréstimo
-      document.getElementById('emprestimoForm').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const form = e.target;
-
-        try {
-          const response = await fetch(form.action, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              alunoId: Number(form.alunoId.value),
-              livroId: Number(form.livroId.value),
-              dataDevolucao: new Date(form.dataDevolucao.value).toISOString()
-            })
-          });
-
-          if (!response.ok) throw new Error('Erro ao registrar empréstimo');
-          window.location.href = '/?success=Empréstimo registrado com sucesso';
-        } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
-        }
-      });
-
-      // Modal de edição
       const modal = document.getElementById("editModal");
-      const span = document.querySelector(".close");
+      const span = modal.querySelector(".close");
+      const editForm = document.getElementById("editLivroForm");
 
       function openEditModal(id, titulo, autor, quantidade) {
         document.getElementById("editLivroId").value = id;
         document.getElementById("editTitulo").value = titulo;
         document.getElementById("editAutor").value = autor;
         document.getElementById("editQuantidade").value = quantidade;
+        editForm.action = `/livros/${id}`;  // seta a URL de edição para o form
         modal.style.display = "block";
       }
 
-      span.onclick = () => modal.style.display = "none";
-      window.onclick = (e) => { if (e.target == modal) modal.style.display = "none"; }
-
-      document.getElementById("editLivroForm").addEventListener("submit", async function(e) {
-        e.preventDefault();
-
-        const livroId = document.getElementById("editLivroId").value;
-        const dados = {
-          titulo: document.getElementById("editTitulo").value,
-          autor: document.getElementById("editAutor").value,
-          quantidade: parseInt(document.getElementById("editQuantidade").value)
-        };
-
-        try {
-          const response = await fetch(`/livros/${livroId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dados)
-          });
-
-          if (!response.ok) throw new Error('Erro ao atualizar livro');
-          window.location.href = '/?success=Livro atualizado com sucesso';
-        } catch (error) {
-          alert(error.message);
-        }
-      });
+      span.onclick = () => { modal.style.display = "none"; };
+      window.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
     </script>
   </div>
 </body>
