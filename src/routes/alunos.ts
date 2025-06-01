@@ -153,7 +153,9 @@ router.post("/:id/email", async (req, res) => {
                   <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
                   <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
                   <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
-                  <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataDevolucao).toLocaleDateString('pt-BR')}</td>
+                  <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                    ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
+                      </td>
                 </tr>
               `;
             }).join('')}
