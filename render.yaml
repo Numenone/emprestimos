@@ -4,4 +4,4 @@ build:
 
 env:
   - key: DATABASE_URL
-    value: postgresql://user:password@localhost:5432/biblioteca?schema=public
+    value: postgresql://postgres:GRz8j3PrKcf6sRfo@db.obwugrqyxowhhxeonujr.supabase.co:5432/postgres?sslmode=require
