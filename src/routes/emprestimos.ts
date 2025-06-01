@@ -81,8 +81,9 @@ router.post("/", async (req, res) => {
           alunoId,
           livroId,
           dataEmprestimo: new Date(),
-          dataDevolucao: dataDevolucaoObj, // Usa o objeto Date
-          devolvido: false
+          dataDevolucao: dataDevolucaoObj,
+          devolvido: false,
+          // createdAt e updatedAt serão preenchidos automaticamente
         },
         include: {
           aluno: { select: { nome: true } },
@@ -94,7 +95,7 @@ router.post("/", async (req, res) => {
         data: { quantidade: { decrement: 1 } }
       })
     ]);
-
+    
     console.log('Empréstimo criado:', novoEmprestimo);
     res.status(201).json({ success: true, emprestimo: novoEmprestimo });
   } catch (error) {
