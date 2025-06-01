@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { Request, Response } from "express";
 
 dotenv.config();
 
@@ -25,7 +26,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // GET todos os alunos
-router.get("/", async (req, res) => {
+router.get("/", async (req: Request, res: Response) => {
   try {
     const alunos = await prisma.aluno.findMany();
     res.json(alunos);
@@ -38,7 +39,7 @@ router.get("/", async (req, res) => {
 });
 
 // POST criar aluno
-router.post("/", async (req, res) => {
+router.post("/", async (req: Request, res: Response) => {
   console.log('Dados recebidos no backend:', req.body);
   
   const valida = alunoSchema.safeParse(req.body);
@@ -66,7 +67,7 @@ router.post("/", async (req, res) => {
 });
 
 // PUT atualizar aluno completo
-router.put("/:id", async (req, res) => {
+router.put("/:id", async (req: Request, res: Response) => {
   const valida = alunoSchema.safeParse(req.body);
   
   if (!valida.success) {
@@ -91,7 +92,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // PATCH atualizar parcialmente aluno
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const aluno = await prisma.aluno.update({
       where: { id: Number(req.params.id) },
@@ -107,7 +108,7 @@ router.patch("/:id", async (req, res) => {
 });
 
 // POST enviar e-mail com empréstimos ativos
-router.post("/:id/email", async (req, res) => {
+router.post("/:id/email", async (req: Request, res: Response) => {
   try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) },

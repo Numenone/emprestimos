@@ -3,6 +3,8 @@ import axios, { AxiosError } from 'axios';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import path from 'path';
+import { Request, Response } from "express";
+
 
 const app = express();
 const PORT = 3001;
@@ -49,7 +51,7 @@ interface RenderOptions {
   };
 
 // Rotas
-app.get('/', async (req, res) => {
+app.get('/', async (req: Request, res: Response) => {
     // Adiciona headers para evitar cache
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
@@ -79,7 +81,7 @@ app.get('/', async (req, res) => {
   });
 
 // Rotas para Alunos
-app.post('/alunos', async (req, res) => {
+app.post('/alunos', async (req: Request, res: Response) => {
     try {
       const alunoData = {
         nome: req.body.nome,
@@ -98,7 +100,7 @@ app.post('/alunos', async (req, res) => {
     }
   });
 
-app.post('/alunos/:id/email', async (req, res) => {
+app.post('/alunos/:id/email', async (req: Request, res: Response) => {
   try {
     await axios.post(`${API_URL}/alunos/${req.params.id}/email`);
     res.redirect('/?success=E-mail enviado com sucesso');
@@ -109,7 +111,7 @@ app.post('/alunos/:id/email', async (req, res) => {
 });
 
 // Rotas para Livros
-app.post('/livros', async (req, res) => {
+app.post('/livros', async (req: Request, res: Response) => {
     try {
       const livroData = {
         titulo: req.body.titulo,
@@ -132,7 +134,7 @@ app.post('/livros', async (req, res) => {
   });
 
 // Rotas para Empréstimos
-app.post('/emprestimos', async (req, res) => {
+app.post('/emprestimos', async (req: Request, res: Response) => {
     console.log('Dados recebidos:', req.body); // Adicione este log
     
     try {
@@ -155,7 +157,7 @@ app.post('/emprestimos', async (req, res) => {
     }
   });
 
-app.post('/emprestimos/:id/devolver', async (req, res) => {
+app.post('/emprestimos/:id/devolver', async (req: Request, res: Response) => {
   try {
     await axios.delete(`${API_URL}/emprestimos/${req.params.id}`);
     res.redirect('/?success=Devolução registrada com sucesso');
@@ -165,7 +167,7 @@ app.post('/emprestimos/:id/devolver', async (req, res) => {
   }
 });
 
-app.put('/livros/:id', async (req, res) => {
+app.put('/livros/:id', async (req: Request, res: Response) => {
     try {
       const response = await axios.put(`${API_URL}/livros/${req.params.id}`, req.body);
       res.redirect('/?success=Livro atualizado com sucesso');

@@ -3,6 +3,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { Request, Response } from "express";
+
 
 dotenv.config();
 
@@ -48,7 +50,7 @@ const handleError = (res: any, error: unknown, context: string) => {
 };
 
 // POST - Criar empréstimo
-router.post("/", async (req, res) => {
+router.post("/", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.create.safeParse(req.body);
   
   if (!validation.success) {
@@ -104,7 +106,7 @@ const [novoEmprestimo] = await prisma.$transaction([
 });
 
 // GET - Listar empréstimos ativos
-router.get("/", async (req, res) => {
+router.get("/", async (req: Request, res: Response) => {
   try {
     const emprestimos = await prisma.emprestimo.findMany({
       where: { devolvido: false },
@@ -122,7 +124,7 @@ router.get("/", async (req, res) => {
 });
 
 // DELETE - Devolver livro
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const emprestimo = await prisma.emprestimo.findUnique({
       where: { id: Number(req.params.id) },
@@ -163,7 +165,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // PUT - Atualizar empréstimo completo
-router.put("/:id", async (req, res) => {
+router.put("/:id", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.create.safeParse(req.body);
   
   if (!validation.success) {
@@ -194,7 +196,7 @@ router.put("/:id", async (req, res) => {
 });
 
 // PATCH - Atualizar parcialmente empréstimo
-router.patch("/:id", async (req, res) => {
+router.patch("/:id", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.update.safeParse(req.body);
   
   if (!validation.success) {
@@ -236,7 +238,7 @@ router.patch("/:id", async (req, res) => {
 });
 
 // POST - Enviar e-mail com empréstimos ativos
-router.post('/:id/email', async (req, res) => {
+router.post('/:id/email', async (req: Request, res: Response) => {
   try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) },
