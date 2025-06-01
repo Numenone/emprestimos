@@ -75,30 +75,26 @@ router.post("/", async (req, res) => {
 
     // Transação
     console.log('Iniciando transação...');
-    const [novoEmprestimo, livroAtualizado] = await prisma.$transaction([
-      prisma.emprestimo.create({
-        data: {
-          alunoId,
-          livroId,
-          dataEmprestimo: new Date(),
-          dataDevolucao: dataDevolucaoObj,
-          devolvido: false // Explícito
-        },
-        include: {
-          aluno: true,
-          livro: true
-        }
-      }),
-      prisma.livro.update({
-        where: { id: livroId },
-        data: { quantidade: { decrement: 1 } }
-      })
-    ]).catch(error => {
-      console.error('Erro na transação:', error);
-      throw error;
-    });
-    
-    console.log('Resultado da transação:', { novoEmprestimo, livroAtualizado });
+const [novoEmprestimo] = await prisma.$transaction([
+  prisma.emprestimo.create({
+    data: {
+      alunoId,
+      livroId,
+      dataEmprestimo: new Date(),
+      dataDevolucao: dataDevolucaoObj,
+      devolvido: false,
+      // createdAt e updatedAt serão preenchidos automaticamente
+    },
+    include: {
+      aluno: { select: { nome: true } },
+      livro: { select: { titulo: true } }
+    }
+  }),
+  prisma.livro.update({
+    where: { id: livroId },
+    data: { quantidade: { decrement: 1 } }
+  })
+]);
 
     console.log('Empréstimo criado:', novoEmprestimo);
     res.status(201).json({ success: true, emprestimo: novoEmprestimo });
