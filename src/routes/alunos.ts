@@ -49,19 +49,26 @@ const alunoSchema = z.object({
 
 // Configuração do Nodemailer
 const mailConfig = {
-  host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
+  host: process.env.MAILTRAP_HOST,
   port: parseInt(process.env.MAILTRAP_PORT || "587"),
   secure: false,
   auth: {
-    user: process.env.MAILTRAP_USER || '',
-    pass: process.env.MAILTRAP_PASS || ''
+    user: process.env.MAILTRAP_USER,
+    pass: process.env.MAILTRAP_PASS
   },
   tls: {
     rejectUnauthorized: false
   }
 };
 
-const transporter = nodemailer.createTransport(mailConfig);
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || "587"),
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
 
 // Verificação da conexão SMTP
 transporter.verify((error) => {
