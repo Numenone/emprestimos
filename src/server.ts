@@ -6,7 +6,10 @@ import livrosRouter from './routes/livros';
 import emprestimosRouter from './routes/emprestimos';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => { // Adicione '0.0.0.0'
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
 
 // Middlewares
 app.use(cors());
@@ -31,6 +34,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 const server = app.listen(PORT, () => {
   console.log(`Backend rodando na porta ${PORT}`);
 });
+
+
 
 // Tratamento de erros do servidor (ex: porta em uso)
 server.on('error', (err: NodeJS.ErrnoException) => {
