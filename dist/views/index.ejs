@@ -45,6 +45,7 @@
                 <td>
                   <button onclick="openEditAlunoModal('<%= aluno.id %>', '<%= aluno.nome %>', '<%= aluno.email %>', '<%= aluno.matricula %>')">Editar</button>
                   <button onclick="deleteAluno('<%= aluno.id %>')">Excluir</button>
+                  <button onclick="enviarEmailAluno('<%= aluno.id %>', '<%= aluno.email %>')">Enviar E-mail</button>
                 </td>
               </tr>
             <% }); %>
@@ -374,6 +375,25 @@
             window.location.href = '/?success=Aluno excluído com sucesso';
           } catch (error) {
             window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          }
+        }
+      }
+
+      async function enviarEmailAluno(id, email) {
+       if (confirm(`Deseja enviar um e-mail para ${email}?`)) {
+           try {
+              const response = await fetch(`/alunos/${id}/enviar-email`, {
+                 method: 'POST'
+              });
+
+           if (!response.ok) {
+             const errorData = await response.json();
+             throw new Error(errorData.error || 'Erro ao enviar e-mail');
+            }
+
+           window.location.href = '/?success=E-mail enviado com sucesso';
+          } catch (error) {
+           window.location.href = `/?error=${encodeURIComponent(error.message)}`;
           }
         }
       }
