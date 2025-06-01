@@ -5,10 +5,11 @@
     "start": "prisma migrate deploy && node dist/app.js",
     "dev": "nodemon src/app.ts",
     "build": "tsc",
+    "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
-    "migrate": "prisma migrate deploy"
+    "migrate": "prisma migrate dev"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
