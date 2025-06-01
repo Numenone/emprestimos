@@ -6,7 +6,15 @@ import livrosRouter from './routes/livros';
 import emprestimosRouter from './routes/emprestimos';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Hello Vercel!');
+});
+
+
+// Exporta o app para a Vercel
+export default app;
 
 // Middlewares
 app.use(cors());
