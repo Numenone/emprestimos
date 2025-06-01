@@ -4,12 +4,10 @@
   "scripts": {
     "start": "ts-node src/app.ts",
     "dev": "nodemon src/app.ts",
-    "vercel-build": "prisma generate && prisma migrate deploy && next build",
-    "build": "next build",
-    "prisma:migrate": "prisma migrate dev --name init",
-    "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio",
-    "backend": "ts-node src/server.ts"
+  "vercel-build": "node prisma/vercel-build.js && next build",
+    "prisma-generate": "prisma generate",
+    "prisma-migrate": "prisma migrate deploy",
+    "next-build": "next build"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
