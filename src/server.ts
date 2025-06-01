@@ -27,9 +27,9 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Iniciar servidor
-const server = app.listen(PORT, () => {
-  console.log(`Backend rodando em http://localhost:${PORT}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Backend rodando na porta ${PORT}`);
 });
 
 // Tratamento de erros do servidor

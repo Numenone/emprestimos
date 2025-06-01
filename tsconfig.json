@@ -9,10 +9,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "node",
-    "baseUrl": "./",
-    "paths": {
-      "*": ["src/*"]
-    }
+    "resolveJsonModule": true,
+    "lib": ["es6", "dom"],
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
