@@ -1,34 +1,30 @@
-datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
 model Livro {
-  id         Int         @id @default(autoincrement())
-  titulo     String
-  autor      String
-  quantidade Int         @default(1)
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  emprestimos Emprestimo[]  // ← Adicione esta linha para a relação inversa
-  
-  @@map("livros")
+  id          Int      @id @default(autoincrement())
+  titulo      String
+  autor       String
+  quantidade  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  emprestimos Emprestimo[]
 }
 
 model Aluno {
-  id          Int         @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   nome        String
-  email       String      @unique
-  matricula   String      @unique
+  email       String   @unique
+  matricula   String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   emprestimos Emprestimo[]
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
-
-  @@map("alunos")
 }
 
 model Emprestimo {
@@ -38,11 +34,11 @@ model Emprestimo {
   dataEmprestimo DateTime
   dataDevolucao  DateTime?
   devolvido      Boolean  @default(false)
-  createdAt      DateTime @default(now()) // Verifique se está definido
-  updatedAt      DateTime @updatedAt     // Verifique se está definido
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   aluno          Aluno    @relation(fields: [alunoId], references: [id])
   livro          Livro    @relation(fields: [livroId], references: [id])
-  
+
   @@index([alunoId])
   @@index([livroId])
 }
