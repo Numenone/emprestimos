@@ -3,8 +3,8 @@ import axios from 'axios';
 import bodyParser from 'body-parser';
 
 const app = express();
-const PORT = 3001; // Porta do frontend
-const API_URL = 'http://localhost:3000'; // URL da API backend
+const PORT = process.env.PORT || 3001; // Porta do frontend
+const API_URL = process.env.API_URL || 'http://localhost:3000'; // URL da API backend
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
