@@ -49,35 +49,29 @@ const alunoSchema = z.object({
 
 // Configuração do Nodemailer
 const mailConfig = {
-  host: process.env.MAILTRAP_HOST,
-  port: parseInt(process.env.MAILTRAP_PORT || "587"),
+  host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
+  port: parseInt(process.env.MAILTRAP_PORT || "2525"), // Porta padrão do Mailtrap
   secure: false,
   auth: {
-    user: process.env.MAILTRAP_USER,
-    pass: process.env.MAILTRAP_PASS
+    user: process.env.MAILTRAP_USER || '',
+    pass: process.env.MAILTRAP_PASS || ''
   },
   tls: {
     rejectUnauthorized: false
   }
 };
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
+// Verificação mais robusta das variáveis de ambiente
+if (!process.env.MAILTRAP_HOST || !process.env.MAILTRAP_USER || !process.env.MAILTRAP_PASS) {
+  console.error('❌ Erro: Configuração do Mailtrap incompleta!');
+  console.error('Por favor, defina as seguintes variáveis no .env:');
+  console.error('MAILTRAP_HOST, MAILTRAP_USER, MAILTRAP_PASS');
+} else {
+  console.log('✅ Configuração do Mailtrap detectada');
+}
 
-// Verificação da conexão SMTP
-transporter.verify((error) => {
-  if (error) {
-    console.error('❌ Falha ao conectar ao servidor de email:', error);
-  } else {
-    console.log('✅ Servidor de email configurado com sucesso');
-  }
-});
+const transporter = nodemailer.createTransport(mailConfig);
+
 
 // GET todos os alunos com paginação
 router.get("/", async (req: Request, res: Response) => {
