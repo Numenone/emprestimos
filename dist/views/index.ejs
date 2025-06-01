@@ -34,17 +34,17 @@
       <% if (alunos && alunos.length > 0) { %>
         <table>
           <thead>
-            <tr><th>Nome</th><th>E-mail</th><th>Ações</th></tr>
+            <tr><th>Nome</th><th>E-mail</th><th>Matrícula</th><th>Ações</th></tr>
           </thead>
           <tbody>
             <% alunos.forEach(aluno => { %>
               <tr>
                 <td><%= aluno.nome %></td>
                 <td><%= aluno.email %></td>
+                <td><%= aluno.matricula %></td>
                 <td>
-                  <form action="/alunos/<%= aluno.id %>/email" method="POST" style="display: inline;">
-                    <button type="submit">Enviar E-mail</button>
-                  </form>
+                  <button onclick="openEditAlunoModal('<%= aluno.id %>', '<%= aluno.nome %>', '<%= aluno.email %>', '<%= aluno.matricula %>')">Editar</button>
+                  <button onclick="deleteAluno('<%= aluno.id %>')">Excluir</button>
                 </td>
               </tr>
             <% }); %>
@@ -76,8 +76,8 @@
                 <td><%= livro.autor %></td>
                 <td><%= livro.quantidade %></td>
                 <td>
-                  <!-- Botão que abre o modal (ver abaixo, continua JavaScript para modal) -->
-                  <button type="button" onclick='openEditModal(<%= livro.id %>, "<%- livro.titulo %>", "<%- livro.autor %>", <%= livro.quantidade %>)'>Editar</button>
+                  <button onclick="openEditLivroModal('<%= livro.id %>', '<%= livro.titulo %>', '<%= livro.autor %>', '<%= livro.quantidade %>')">Editar</button>
+                  <button onclick="deleteLivro('<%= livro.id %>')">Excluir</button>
                 </td>
               </tr>
             <% }); %>
@@ -119,9 +119,7 @@
                 <td><%= emp.livro?.titulo %></td>
                 <td><%= new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') %></td>
                 <td>
-                  <form action="/emprestimos/<%= emp.id %>/devolver" method="POST">
-                    <button type="submit">Devolver</button>
-                  </form>
+                  <button onclick="devolverEmprestimo('<%= emp.id %>')">Devolver</button>
                 </td>
               </tr>
             <% }); %>
@@ -131,61 +129,275 @@
     </section>
 
     <!-- Modal de Edição de Livro -->
-    <div id="editModal" class="modal" role="dialog" aria-modal="true" style="display:none;">
+    <div id="editLivroModal" class="modal">
       <div class="modal-content">
-        <span class="close" style="cursor:pointer;">&times;</span>
+        <span class="close" onclick="hideModal('editLivroModal')">&times;</span>
         <h2>Editar Livro</h2>
-        <form id="editLivroForm" action="/livros/0?_method=PUT" method="POST">
-          <!-- Necessário para que Express entenda PUT -->
-          <input type="hidden" name="_method" value="PUT">
-          <input type="hidden" id="editLivroId" name="id">
-          <input type="text" id="editTitulo" name="titulo" placeholder="Título" required>
-          <input type="text" id="editAutor" name="autor" placeholder="Autor" required>
-          <input type="number" id="editQuantidade" name="quantidade" placeholder="Quantidade" min="1" required>
+        <form id="editLivroForm">
+          <input type="hidden" id="editLivroId">
+          <input type="text" id="editTitulo" placeholder="Título" required>
+          <input type="text" id="editAutor" placeholder="Autor" required>
+          <input type="number" id="editQuantidade" placeholder="Quantidade" min="1" required>
           <button type="submit">Salvar Alterações</button>
         </form>
       </div>
     </div>
 
-    <!-- Scripts para controle do modal (somente para UX, não interfere no submit) -->
+    <!-- Modal de Edição de Aluno -->
+    <div id="editAlunoModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('editAlunoModal')">&times;</span>
+        <h2>Editar Aluno</h2>
+        <form id="editAlunoForm">
+          <input type="hidden" id="editAlunoId">
+          <input type="text" id="editNome" placeholder="Nome" required>
+          <input type="email" id="editEmail" placeholder="E-mail" required>
+          <input type="text" id="editMatricula" placeholder="Matrícula" required>
+          <button type="submit">Salvar Alterações</button>
+        </form>
+      </div>
+    </div>
+
     <script>
-       const modal = document.getElementById("editModal");
-  const span = modal.querySelector(".close");
-  const editForm = document.getElementById("editLivroForm");
+      // Controle de Modais
+      function showModal(modalId) {
+        document.getElementById(modalId).style.display = 'block';
+      }
 
-  function openEditModal(id, titulo, autor, quantidade) {
-    // Preencher os campos do formulário com os dados do livro
-    document.getElementById("editLivroId").value = id;
-    document.getElementById("editTitulo").value = titulo;
-    document.getElementById("editAutor").value = autor;
-    document.getElementById("editQuantidade").value = quantidade;
+      function hideModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+      }
 
-    // Atualizar o action do form com o ID correto
-    editForm.action = `/livros/${id}?_method=PUT`;
+      // Fechar modais ao clicar fora
+      window.onclick = function(event) {
+        if (event.target.className === 'modal') {
+          event.target.style.display = 'none';
+        }
+      }
 
-    // Mostrar o modal
-    modal.style.display = "block";
-  }
+      // Formulário de Aluno (AJAX)
+      document.getElementById('alunoForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        
+        try {
+          const response = await fetch('/alunos', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              nome: form.nome.value,
+              email: form.email.value,
+              matricula: form.matricula.value
+            })
+          });
 
-  // Fechar o modal ao clicar no "X"
-  span.onclick = () => {
-    modal.style.display = "none";
-  };
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao cadastrar aluno');
+          }
 
-  // Fechar o modal ao pressionar a tecla "Esc"
-  window.onkeydown = (event) => {
-    if (event.key === "Escape") {
-      modal.style.display = "none";
-    }
-  };
+          window.location.href = '/?success=Aluno cadastrado com sucesso';
+        } catch (error) {
+          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+        }
+      });
 
-  // Fechar o modal ao clicar fora da área do modal
-  window.onclick = (event) => {
-    if (event.target === modal) {
-      modal.style.display = "none";
-    }
-  };
-  </script>
+      // Formulário de Livro (AJAX)
+      document.getElementById('livroForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        
+        try {
+          const response = await fetch('/livros', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              titulo: form.titulo.value,
+              autor: form.autor.value,
+              quantidade: parseInt(form.quantidade.value)
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao cadastrar livro');
+          }
+
+          window.location.href = '/?success=Livro cadastrado com sucesso';
+        } catch (error) {
+          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+        }
+      });
+
+      // Formulário de Empréstimo (AJAX)
+      document.getElementById('emprestimoForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        
+        try {
+          const dataDevolucao = new Date(form.dataDevolucao.value);
+          if (isNaN(dataDevolucao.getTime())) {
+            throw new Error('Data de devolução inválida');
+          }
+
+          const response = await fetch('/emprestimos', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              alunoId: parseInt(form.alunoId.value),
+              livroId: parseInt(form.livroId.value),
+              dataDevolucao: dataDevolucao.toISOString()
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao registrar empréstimo');
+          }
+
+          window.location.href = '/?success=Empréstimo registrado com sucesso';
+        } catch (error) {
+          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+        }
+      });
+
+      // Edição de Livro
+      function openEditLivroModal(id, titulo, autor, quantidade) {
+        document.getElementById('editLivroId').value = id;
+        document.getElementById('editTitulo').value = titulo;
+        document.getElementById('editAutor').value = autor;
+        document.getElementById('editQuantidade').value = quantidade;
+        showModal('editLivroModal');
+      }
+
+      document.getElementById('editLivroForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        try {
+          const response = await fetch(`/livros/${document.getElementById('editLivroId').value}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              titulo: document.getElementById('editTitulo').value,
+              autor: document.getElementById('editAutor').value,
+              quantidade: parseInt(document.getElementById('editQuantidade').value)
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao atualizar livro');
+          }
+
+          window.location.href = '/?success=Livro atualizado com sucesso';
+        } catch (error) {
+          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+        }
+      });
+
+      // Edição de Aluno
+      function openEditAlunoModal(id, nome, email, matricula) {
+        document.getElementById('editAlunoId').value = id;
+        document.getElementById('editNome').value = nome;
+        document.getElementById('editEmail').value = email;
+        document.getElementById('editMatricula').value = matricula;
+        showModal('editAlunoModal');
+      }
+
+      document.getElementById('editAlunoForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        try {
+          const response = await fetch(`/alunos/${document.getElementById('editAlunoId').value}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              nome: document.getElementById('editNome').value,
+              email: document.getElementById('editEmail').value,
+              matricula: document.getElementById('editMatricula').value
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao atualizar aluno');
+          }
+
+          window.location.href = '/?success=Aluno atualizado com sucesso';
+        } catch (error) {
+          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+        }
+      });
+
+      // Funções para deletar
+      async function deleteLivro(id) {
+        if (confirm('Tem certeza que deseja excluir este livro?')) {
+          try {
+            const response = await fetch(`/livros/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao excluir livro');
+            }
+
+            window.location.href = '/?success=Livro excluído com sucesso';
+          } catch (error) {
+            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          }
+        }
+      }
+
+      async function deleteAluno(id) {
+        if (confirm('Tem certeza que deseja excluir este aluno?')) {
+          try {
+            const response = await fetch(`/alunos/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao excluir aluno');
+            }
+
+            window.location.href = '/?success=Aluno excluído com sucesso';
+          } catch (error) {
+            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          }
+        }
+      }
+
+      // Devolução de empréstimo
+      async function devolverEmprestimo(id) {
+        if (confirm('Confirmar devolução deste livro?')) {
+          try {
+            const response = await fetch(`/emprestimos/${id}/devolver`, {
+              method: 'POST'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao registrar devolução');
+            }
+
+            window.location.href = '/?success=Devolução registrada com sucesso';
+          } catch (error) {
+            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          }
+        }
+      }
+    </script>
   </div>
 </body>
 </html>
