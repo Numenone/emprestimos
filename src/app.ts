@@ -129,6 +129,7 @@ app.put('/livros/:id', async (req, res) => {
 });
 
 // Inicia servidor
-app.listen(PORT, () => {
-  console.log(`Sistema rodando na porta ${PORT}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => { // Adicione '0.0.0.0'
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
