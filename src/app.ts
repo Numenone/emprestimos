@@ -16,14 +16,20 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../../public')));
 
-// Configuração do EJS
-app.set('views', path.join(__dirname, '../../views'));
+const viewsPath = process.env.NODE_ENV === 'production'
+  ? path.join(__dirname, 'views')
+  : path.join(__dirname, '../src/views');
+
 app.set('view engine', 'ejs');
+app.set('views', viewsPath);
 
 // Rotas da API
 app.use('/api/alunos', alunosRouter);
 app.use('/api/livros', livrosRouter);
 app.use('/api/emprestimos', emprestimosRouter);
+
+
+
 
 // Rota principal que renderiza a página
 app.get('/', async (req, res) => {

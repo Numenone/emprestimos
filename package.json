@@ -4,7 +4,7 @@
   "scripts": {
     "start": "node dist/app.js",
     "dev": "nodemon src/app.ts",
-    "build": "tsc",
+    "build": "tsc && cpy src/views/**/* dist/views --parents",
     "postinstall": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:generate": "prisma generate",
@@ -27,6 +27,7 @@
     "@types/express-rate-limit": "^5.1.3",
     "@types/node": "^20.17.57",
     "@types/nodemailer": "^6.4.17",
+    "cpy-cli": "^5.0.0",
     "nodemon": "^3.0.2",
     "prisma": "^5.22.0",
     "ts-node": "^10.9.2",
