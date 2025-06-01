@@ -15,25 +15,34 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
-const alunos_1 = __importDefault(require("./routes/alunos"));
 const livros_1 = __importDefault(require("./routes/livros"));
 const emprestimos_1 = __importDefault(require("./routes/emprestimos"));
 const client_1 = require("@prisma/client");
+const method_override_1 = __importDefault(require("method-override"));
+const alunos_1 = __importDefault(require("./routes/alunos"));
 const prisma = new client_1.PrismaClient();
 const app = (0, express_1.default)();
-const PORT = parseInt(process.env.PORT || '10000');
+const PORT = parseInt(process.env.PORT || '10000', 10);
 // Middlewares
 app.use((0, cors_1.default)());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use(express_1.default.json());
-app.use(express_1.default.static(path_1.default.join(__dirname, '../../public')));
-// Configuração do EJS
-app.set('views', path_1.default.join(__dirname, '../../views'));
+const publicPath = path_1.default.join(__dirname, '../public');
+app.use(express_1.default.static(publicPath));
+app.use((0, method_override_1.default)('_method'));
+// Verifique se o caminho está correto
+console.log(`Serving static files from: ${publicPath}`);
+const viewsPath = process.env.NODE_ENV === 'production'
+    ? path_1.default.join(__dirname, 'views')
+    : path_1.default.join(__dirname, '../src/views');
 app.set('view engine', 'ejs');
+app.set('views', viewsPath);
 // Rotas da API
-app.use('/api/alunos', alunos_1.default);
-app.use('/api/livros', livros_1.default);
-app.use('/api/emprestimos', emprestimos_1.default);
+app.use('/alunos', alunos_1.default);
+app.use('/livros', livros_1.default);
+app.use('/emprestimos', emprestimos_1.default);
+app.use((0, method_override_1.default)('_method'));
+app.use(express_1.default.urlencoded({ extended: true }));
 // Rota principal que renderiza a página
 app.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -112,22 +121,48 @@ app.post('/emprestimos/:id/devolver', (req, res) => __awaiter(void 0, void 0, vo
     }
 }));
 app.put('/livros/:id', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    const id = parseInt(req.params.id);
+    const { titulo, autor, quantidade } = req.body;
+    if (!titulo || !autor || !quantidade || isNaN(id)) {
+        return res.status(400).render('index', {
+            error: 'Dados inválidos para edição.',
+            success: null,
+            alunos: yield prisma.aluno.findMany(),
+            livros: yield prisma.livro.findMany(),
+            emprestimos: yield prisma.emprestimo.findMany({ include: { aluno: true, livro: true } })
+        });
+    }
     try {
         yield prisma.livro.update({
-            where: { id: parseInt(req.params.id) },
+            where: { id },
             data: {
-                titulo: req.body.titulo,
-                autor: req.body.autor,
-                quantidade: parseInt(req.body.quantidade)
+                titulo,
+                autor,
+                quantidade: parseInt(quantidade)
             }
         });
-        res.redirect('/?success=Livro atualizado com sucesso');
+        res.redirect('/'); // Redireciona após o sucesso
     }
-    catch (error) {
-        res.redirect('/?error=Erro ao atualizar livro');
+    catch (err) {
+        console.error('Erro ao editar livro:', err);
+        res.status(500).render('index', {
+            error: 'Erro interno ao editar livro.',
+            success: null,
+            alunos: yield prisma.aluno.findMany(),
+            livros: yield prisma.livro.findMany(),
+            emprestimos: yield prisma.emprestimo.findMany({ include: { aluno: true, livro: true } })
+        });
     }
 }));
 // Inicia servidor
+process.on('SIGTERM', () => __awaiter(void 0, void 0, void 0, function* () {
+    yield prisma.$disconnect();
+    process.exit(0);
+}));
+process.on('SIGINT', () => __awaiter(void 0, void 0, void 0, function* () {
+    yield prisma.$disconnect();
+    process.exit(0);
+}));
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);
-  });
+});
