@@ -1,11 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { Router, Request, Response } from 'express'; // Importe os tipos corretos
+import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Defina a interface para o corpo da requisição
 interface LivroRequestBody {
   titulo: string;
   autor: string;
@@ -18,13 +17,17 @@ const livroSchema = z.object({
   quantidade: z.number().int().positive("Quantidade deve ser um número positivo")
 });
 
+// Função para parsear e validar a quantidade
+function parseQuantidade(q: string | number): number | null {
+  const n = typeof q === 'number' ? q : parseInt(q, 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 // GET todos os livros
 router.get("/", async (req: Request, res: Response) => {
   try {
     const livros = await prisma.livro.findMany({
-      orderBy: {
-        titulo: 'asc'
-      }
+      orderBy: { titulo: 'asc' }
     });
     res.status(200).json(livros);
   } catch (error) {
@@ -38,10 +41,18 @@ router.get("/", async (req: Request, res: Response) => {
 // POST criar livro
 router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) => {
   try {
+    const quantidade = parseQuantidade(req.body.quantidade);
+    if (quantidade === null) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Quantidade inválida, deve ser número inteiro positivo"
+      });
+    }
+
     const livroData = {
       titulo: req.body.titulo,
       autor: req.body.autor,
-      quantidade: parseInt(req.body.quantidade.toString())
+      quantidade: quantidade
     };
 
     const valida = livroSchema.safeParse(livroData);
@@ -59,8 +70,8 @@ router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) =
         titulo: true,
         autor: true,
         quantidade: true,
-        createdAt: true,  // Usando o nome do campo conforme definido no Prisma
-        updatedAt: true   // Usando o nome do campo conforme definido no Prisma
+        createdAt: true,
+        updatedAt: true
       }
     });
 
@@ -81,8 +92,13 @@ router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) =
 // GET livro por ID
 router.get("/:id", async (req: Request<{id: string}>, res: Response) => {
   try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
     const livro = await prisma.livro.findUnique({
-      where: { id: Number(req.params.id) }
+      where: { id }
     });
 
     if (!livro) {
@@ -101,10 +117,23 @@ router.get("/:id", async (req: Request<{id: string}>, res: Response) => {
 // PUT atualizar livro completo
 router.put("/:id", async (req: Request<{id: string}, {}, LivroRequestBody>, res: Response) => {
   try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: "ID inválido" });
+    }
+
+    const quantidade = parseQuantidade(req.body.quantidade);
+    if (quantidade === null) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Quantidade inválida, deve ser número inteiro positivo"
+      });
+    }
+
     const livroData = {
       titulo: req.body.titulo,
       autor: req.body.autor,
-      quantidade: parseInt(req.body.quantidade.toString())
+      quantidade
     };
 
     const valida = livroSchema.safeParse(livroData);
@@ -117,7 +146,7 @@ router.put("/:id", async (req: Request<{id: string}, {}, LivroRequestBody>, res:
     }
 
     const livro = await prisma.livro.update({
-      where: { id: Number(req.params.id) },
+      where: { id },
       data: valida.data
     });
     

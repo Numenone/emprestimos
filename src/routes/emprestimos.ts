@@ -1,26 +1,57 @@
 import { PrismaClient } from '@prisma/client';
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import { Request, Response } from "express";
-
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
+
+// Interfaces for type safety
+interface Emprestimo {
+  id: number;
+  alunoId: number;
+  livroId: number;
+  dataEmprestimo: Date;
+  dataDevolucao: Date | null;
+  devolvido: boolean;
+}
+
+interface Livro {
+  id: number;
+  titulo: string;
+  autor: string;
+  quantidade: number;
+}
+
+interface Aluno {
+  id: number;
+  nome: string;
+  email: string;
+  matricula: string;
+}
 
 const prisma = new PrismaClient();
 const router = Router();
 
+// Rate limiting for email endpoint
+const emailRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many email requests from this IP, please try again later'
+});
+
+// Email transporter configuration
 const transporter = nodemailer.createTransport({
   host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
   port: parseInt(process.env.MAILTRAP_PORT || "2525"),
   auth: {
-    user: process.env.MAILTRAP_USER,
-    pass: process.env.MAILTRAP_PASS
+    user: process.env.MAILTRAP_USER || '',
+    pass: process.env.MAILTRAP_PASS || ''
   }
 });
 
-// Schemas de validação
+// Validation schemas
 const EmprestimoSchema = {
   create: z.object({
     alunoId: z.number().int().positive("ID do aluno inválido"),
@@ -38,8 +69,8 @@ const EmprestimoSchema = {
   })
 };
 
-// Helper para tratamento de erros
-const handleError = (res: any, error: unknown, context: string) => {
+// Error handling helper
+const handleError = (res: Response, error: unknown, context: string) => {
   console.error(`Erro em ${context}:`, error);
   const message = error instanceof Error ? error.message : 'Erro desconhecido';
   res.status(500).json({ 
@@ -49,7 +80,7 @@ const handleError = (res: any, error: unknown, context: string) => {
   });
 };
 
-// POST - Criar empréstimo
+// POST - Create loan
 router.post("/", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.create.safeParse(req.body);
   
@@ -64,66 +95,90 @@ router.post("/", async (req: Request, res: Response) => {
     const { alunoId, livroId, dataDevolucao } = validation.data;
     const dataDevolucaoObj = new Date(dataDevolucao);
 
-    // Verificação adicional
-    console.log('Verificando disponibilidade...');
+    // Verify book availability
     const livro = await prisma.livro.findUnique({ where: { id: livroId } });
     if (!livro || livro.quantidade <= 0) {
-      console.log('Livro não disponível');
       return res.status(400).json({ 
         success: false, 
         error: "Livro não disponível" 
       });
     }
 
-    // Transação
-    console.log('Iniciando transação...');
-const [novoEmprestimo] = await prisma.$transaction([
-  prisma.emprestimo.create({
-    data: {
-      alunoId,
-      livroId,
-      dataEmprestimo: new Date(),
-      dataDevolucao: dataDevolucaoObj,
-      devolvido: false,
-      // createdAt e updatedAt serão preenchidos automaticamente
-    },
-    include: {
-      aluno: { select: { nome: true } },
-      livro: { select: { titulo: true } }
+    // Verify student exists
+    const alunoExists = await prisma.aluno.findUnique({ where: { id: alunoId } });
+    if (!alunoExists) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Aluno não encontrado" 
+      });
     }
-  }),
-  prisma.livro.update({
-    where: { id: livroId },
-    data: { quantidade: { decrement: 1 } }
-  })
-]);
 
-    console.log('Empréstimo criado:', novoEmprestimo);
-    res.status(201).json({ success: true, emprestimo: novoEmprestimo });
+    // Transaction
+    const [novoEmprestimo] = await prisma.$transaction([
+      prisma.emprestimo.create({
+        data: {
+          alunoId,
+          livroId,
+          dataEmprestimo: new Date(),
+          dataDevolucao: dataDevolucaoObj,
+          devolvido: false,
+        },
+        include: {
+          aluno: { select: { nome: true, email: true } },
+          livro: { select: { titulo: true, autor: true } }
+        }
+      }),
+      prisma.livro.update({
+        where: { id: livroId },
+        data: { quantidade: { decrement: 1 } }
+      })
+    ]);
+
+    res.status(201).json({ 
+      success: true, 
+      emprestimo: novoEmprestimo 
+    });
   } catch (error) {
     handleError(res, error, "criar empréstimo");
   }
 });
 
-// GET - Listar empréstimos ativos
+// GET - List active loans with pagination
 router.get("/", async (req: Request, res: Response) => {
-  try {
-    const emprestimos = await prisma.emprestimo.findMany({
-      where: { devolvido: false },
-      include: {
-        aluno: { select: { nome: true, email: true } },
-        livro: { select: { titulo: true, autor: true } }
-      },
-      orderBy: { dataEmprestimo: 'desc' }
-    });
+  const page = parseInt(req.query.page as string) || 1;
+  const pageSize = parseInt(req.query.pageSize as string) || 10;
+  const skip = (page - 1) * pageSize;
 
-    res.status(200).json(emprestimos);
+  try {
+    const [emprestimos, total] = await Promise.all([
+      prisma.emprestimo.findMany({
+        where: { devolvido: false },
+        include: {
+          aluno: { select: { nome: true, email: true } },
+          livro: { select: { titulo: true, autor: true } }
+        },
+        orderBy: { dataEmprestimo: 'desc' },
+        skip,
+        take: pageSize
+      }),
+      prisma.emprestimo.count({ where: { devolvido: false } })
+    ]);
+
+    res.status(200).json({
+      data: emprestimos,
+      pagination: {
+        page,
+        pageSize,
+        totalItems: total,
+        totalPages: Math.ceil(total / pageSize)
+      }
+    });
   } catch (error) {
     handleError(res, error, "listar empréstimos");
   }
 });
 
-// DELETE - Devolver livro
+// DELETE - Return book
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const emprestimo = await prisma.emprestimo.findUnique({
@@ -132,17 +187,26 @@ router.delete("/:id", async (req: Request, res: Response) => {
     });
 
     if (!emprestimo) {
-      return res.status(404).json({ success: false, error: "Empréstimo não encontrado" });
+      return res.status(404).json({ 
+        success: false, 
+        error: "Empréstimo não encontrado" 
+      });
     }
 
     if (emprestimo.devolvido) {
-      return res.status(400).json({ success: false, error: "Livro já devolvido" });
+      return res.status(400).json({ 
+        success: false, 
+        error: "Livro já devolvido" 
+      });
     }
 
     const [_, livroAtualizado] = await prisma.$transaction([
       prisma.emprestimo.update({
         where: { id: Number(req.params.id) },
-        data: { devolvido: true }
+        data: { 
+          devolvido: true,
+          dataDevolucao: new Date() // Set return date to now
+        }
       }),
       prisma.livro.update({
         where: { id: emprestimo.livroId },
@@ -164,7 +228,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// PUT - Atualizar empréstimo completo
+// PUT - Full update loan
 router.put("/:id", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.create.safeParse(req.body);
   
@@ -176,6 +240,17 @@ router.put("/:id", async (req: Request, res: Response) => {
   }
 
   try {
+    // Verify loan exists
+    const exists = await prisma.emprestimo.findUnique({
+      where: { id: Number(req.params.id) }
+    });
+    if (!exists) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Empréstimo não encontrado" 
+      });
+    }
+
     const emprestimo = await prisma.emprestimo.update({
       where: { id: Number(req.params.id) },
       data: {
@@ -195,7 +270,7 @@ router.put("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// PATCH - Atualizar parcialmente empréstimo
+// PATCH - Partial update loan
 router.patch("/:id", async (req: Request, res: Response) => {
   const validation = EmprestimoSchema.update.safeParse(req.body);
   
@@ -207,8 +282,18 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 
   try {
-    // Criar objeto de atualização
-    const updateData: any = {};
+    // Verify loan exists
+    const exists = await prisma.emprestimo.findUnique({
+      where: { id: Number(req.params.id) }
+    });
+    if (!exists) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Empréstimo não encontrado" 
+      });
+    }
+
+    const updateData: Partial<Emprestimo> = {};
     
     if (validation.data.alunoId !== undefined) {
       updateData.alunoId = validation.data.alunoId;
@@ -237,8 +322,8 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// POST - Enviar e-mail com empréstimos ativos
-router.post('/:id/email', async (req: Request, res: Response) => {
+// POST - Send email with active loans (with rate limiting)
+router.post('/:id/email', emailRateLimiter, async (req: Request, res: Response) => {
   try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) },
@@ -254,44 +339,22 @@ router.post('/:id/email', async (req: Request, res: Response) => {
     });
 
     if (!aluno) {
-      return res.status(404).json({ success: false, error: "Aluno não encontrado" });
+      return res.status(404).json({ 
+        success: false, 
+        error: "Aluno não encontrado" 
+      });
     }
 
-    const html = `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
-        <p>Aluno: <strong>${aluno.nome}</strong> (${aluno.email})</p>
-        ${aluno.emprestimos.length > 0 ? `
-          <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
-            <thead>
-              <tr style="background-color: #f2f2f2;">
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Livro</th>
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Autor</th>
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Data Devolução</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${aluno.emprestimos.map(emp => `
-                <tr>
-                  <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro.titulo}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro.autor}</td>
-                  <td style="padding: 10px; border-bottom: 1px solid #ddd;">
-                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        ` : '<p style="margin-top: 15px;">Nenhum empréstimo ativo no momento.</p>'}
-      </div>
-    `;
+    const html = generateEmailHtml(aluno);
 
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: process.env.MAIL_FROM || '"Biblioteca" <biblioteca@example.com>',
       to: aluno.email,
       subject: `Seus empréstimos ativos - ${aluno.nome}`,
       html
     });
+
+    console.log('Email sent:', info.messageId);
 
     res.json({ 
       success: true,
@@ -302,6 +365,54 @@ router.post('/:id/email', async (req: Request, res: Response) => {
   } catch (error) {
     handleError(res, error, "enviar e-mail");
   }
+});
+
+// Helper function to generate email HTML
+function generateEmailHtml(aluno: Aluno & { emprestimos: (Emprestimo & { livro: Livro | null })[] }): string {
+  return `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
+      <p>Aluno: <strong>${aluno.nome}</strong> (${aluno.email})</p>
+      ${aluno.emprestimos.length > 0 ? `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+          <thead>
+            <tr style="background-color: #f2f2f2;">
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Livro</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Autor</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Data Empréstimo</th>
+              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Data Devolução</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${aluno.emprestimos.map(emp => `
+              <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro?.titulo || 'Livro não encontrado'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro?.autor || 'N/A'}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${emp.dataEmprestimo.toLocaleDateString('pt-BR')}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                  ${emp.dataDevolucao ? emp.dataDevolucao.toLocaleDateString('pt-BR') : 'Pendente'}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<p style="margin-top: 15px;">Nenhum empréstimo ativo no momento.</p>'}
+      <p style="margin-top: 20px; font-size: 0.9em; color: #666;">
+        Esta é uma mensagem automática, por favor não responda.
+      </p>
+    </div>
+  `;
+}
+
+// Proper shutdown handling
+process.on('SIGTERM', async () => {
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  await prisma.$disconnect();
+  process.exit(0);
 });
 
 export default router;

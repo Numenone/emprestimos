@@ -6,7 +6,7 @@ import livrosRouter from './routes/livros';
 import emprestimosRouter from './routes/emprestimos';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middlewares
 app.use(cors());
@@ -27,16 +27,17 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// Inicia o servidor e captura a instância
+const server = app.listen(PORT, () => {
   console.log(`Backend rodando na porta ${PORT}`);
 });
 
-// Tratamento de erros do servidor
+// Tratamento de erros do servidor (ex: porta em uso)
 server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`Porta ${PORT} já está em uso.`);
     process.exit(1);
+  } else {
+    console.error('Erro no servidor:', err.message);
   }
-  console.error('Erro no servidor:', err.message);
 });
