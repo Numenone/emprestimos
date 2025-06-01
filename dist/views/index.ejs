@@ -135,7 +135,7 @@
       <div class="modal-content">
         <span class="close" style="cursor:pointer;">&times;</span>
         <h2>Editar Livro</h2>
-        <form id="editLivroForm" action="" method="POST">
+        <form action="/livros/<%= livro.id %>?_method=PUT" method="POST">
           <!-- Usar método POST com override para PUT no backend (ex: middleware method-override) -->
           <input type="hidden" name="_method" value="PUT">
           <input type="hidden" id="editLivroId" name="id">

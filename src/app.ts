@@ -1,10 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import alunosRouter from './routes/alunos';
 import livrosRouter from './routes/livros';
 import emprestimosRouter from './routes/emprestimos';
 import { PrismaClient } from '@prisma/client';
+import methodOverride from 'method-override';
+import alunosRouter from './routes/alunos';
+
+
 
 const prisma = new PrismaClient();
 const app = express();
@@ -16,6 +19,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 const publicPath = path.join(__dirname, '../public');
 app.use(express.static(publicPath));
+app.use(methodOverride('_method'));
 
 // Verifique se o caminho está correto
 console.log(`Serving static files from: ${publicPath}`);
@@ -31,7 +35,9 @@ app.set('views', viewsPath);
 app.use('/api/alunos', alunosRouter);
 app.use('/api/livros', livrosRouter);
 app.use('/api/emprestimos', emprestimosRouter);
-
+app.use('/alunos', alunosRouter);
+app.use('/livros', livrosRouter);
+app.use('/emprestimos', emprestimosRouter);
 
 
 
