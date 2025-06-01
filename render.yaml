@@ -1,2 +1,7 @@
 build:
-  command: npm install --include=dev && npm run build
+  command: npm install && npm run build
+  nodeVersion: 18.x
+
+env:
+  - key: DATABASE_URL
+    value: postgresql://user:password@localhost:5432/biblioteca?schema=public
