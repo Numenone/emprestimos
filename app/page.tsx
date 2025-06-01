@@ -1,3 +1,7 @@
 export default function Home() {
-    return <main>Bem-vindo ao sistema de empréstimos</main>
-  }
+  return (
+    <main>
+      <h1>Sistema de Empréstimos</h1>
+    </main>
+  )
+}
