@@ -21,7 +21,7 @@ const emprestimos_1 = __importDefault(require("./routes/emprestimos"));
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '10000');
 // Middlewares
 app.use((0, cors_1.default)());
 app.use(express_1.default.urlencoded({ extended: true }));
@@ -128,6 +128,6 @@ app.put('/livros/:id', (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
 }));
 // Inicia servidor
-app.listen(PORT, () => {
-    console.log(`Sistema rodando na porta ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+  });
