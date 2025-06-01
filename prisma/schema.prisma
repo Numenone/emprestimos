@@ -8,12 +8,13 @@ generator client {
 }
 
 model Livro {
-  id         Int      @id @default(autoincrement())
+  id         Int         @id @default(autoincrement())
   titulo     String
   autor      String
-  quantidade Int      @default(1)
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  quantidade Int         @default(1)
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  emprestimos Emprestimo[]  // ← Adicione esta linha para a relação inversa
   
   @@map("livros")
 }
@@ -37,6 +38,8 @@ model Emprestimo {
   dataEmprestimo DateTime @default(now())
   dataDevolucao  DateTime
   devolvido      Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")  // ← Adicione esta linha
   aluno          Aluno    @relation(fields: [alunoId], references: [id])
   livro          Livro    @relation(fields: [livroId], references: [id])
 
