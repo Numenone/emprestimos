@@ -26,6 +26,12 @@ app.use((err, req, res, next) => {
         details: err.message
     });
 });
+app.use(cors({
+    origin: "https://emprestimos-nlq1.onrender.com", // ou "*" para desenvolvimento
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type"],
+  }));
+
 // Inicia o servidor e captura a instância
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor backend rodando na porta ${PORT}`);
