@@ -9,7 +9,7 @@ const alunos_1 = __importDefault(require("./routes/alunos"));
 const livros_1 = __importDefault(require("./routes/livros"));
 const emprestimos_1 = __importDefault(require("./routes/emprestimos"));
 const app = (0, express_1.default)();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '10000');
 // Middlewares
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
@@ -27,9 +27,9 @@ app.use((err, req, res, next) => {
     });
 });
 // Inicia o servidor e captura a instância
-const server = app.listen(PORT, () => {
-    console.log(`Backend rodando na porta ${PORT}`);
-});
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor backend rodando na porta ${PORT}`);
+  });
 // Tratamento de erros do servidor (ex: porta em uso)
 server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {

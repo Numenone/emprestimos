@@ -8,7 +8,7 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT: number = parseInt(process.env.PORT || '10000', 10);
 
 // Middlewares
 app.use(cors());
@@ -129,7 +129,7 @@ app.put('/livros/:id', async (req, res) => {
 });
 
 // Inicia servidor
-const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, '0.0.0.0', () => { // Adicione '0.0.0.0'
   console.log(`Servidor rodando na porta ${PORT}`);
 });
