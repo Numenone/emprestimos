@@ -34,12 +34,26 @@ const alunoSchema = zod_1.z.object({
     matricula: zod_1.z.string().min(5, { message: "Matrícula deve ter pelo menos 5 caracteres" })
 });
 // Configuração do Nodemailer
-const transporter = nodemailer_1.default.createTransport({
+const mailConfig = {
     host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
-    port: parseInt(process.env.MAILTRAP_PORT || "2525"),
+    port: parseInt(process.env.MAILTRAP_PORT || "587"),
+    secure: false,
     auth: {
         user: process.env.MAILTRAP_USER || '',
         pass: process.env.MAILTRAP_PASS || ''
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+};
+const transporter = nodemailer_1.default.createTransport(mailConfig);
+// Verificação da conexão SMTP
+transporter.verify((error) => {
+    if (error) {
+        console.error('❌ Falha ao conectar ao servidor de email:', error);
+    }
+    else {
+        console.log('✅ Servidor de email configurado com sucesso');
     }
 });
 // GET todos os alunos com paginação
@@ -163,6 +177,12 @@ router.patch("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* (
 // POST enviar email com empréstimos ativos (com rate limiting)
 router.post("/:id/email", emailRateLimiter, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        if (!mailConfig.auth.user || !mailConfig.auth.pass) {
+            return res.status(500).json({
+                error: 'Serviço de email não configurado',
+                details: 'As credenciais de email não foram configuradas no servidor'
+            });
+        }
         const aluno = yield prisma.aluno.findUnique({
             where: { id: Number(req.params.id) },
             include: {
@@ -178,6 +198,9 @@ router.post("/:id/email", emailRateLimiter, (req, res) => __awaiter(void 0, void
         if (!aluno) {
             return res.status(404).json({ error: 'Aluno não encontrado' });
         }
+        if (!aluno.email) {
+            return res.status(400).json({ error: 'Aluno não possui email cadastrado' });
+        }
         if (aluno.emprestimos.length === 0) {
             return res.json({
                 message: 'Aluno não possui empréstimos ativos',
@@ -186,24 +209,45 @@ router.post("/:id/email", emailRateLimiter, (req, res) => __awaiter(void 0, void
         }
         const emailHtml = generateEmailHtml(aluno);
         const mailOptions = {
-            from: process.env.MAILTRAP_FROM || '"Biblioteca" <biblioteca@example.com>',
+            from: process.env.MAILTRAP_FROM || `"Biblioteca" <${mailConfig.auth.user}>`,
             to: aluno.email,
             subject: `[Biblioteca] Empréstimos Ativos - ${aluno.nome}`,
-            html: emailHtml
+            html: emailHtml,
+            headers: {
+                'X-Mailer': 'Node.js',
+                'X-Priority': '3',
+                'Importance': 'Normal'
+            }
         };
         const info = yield transporter.sendMail(mailOptions);
         console.log('E-mail enviado:', info.messageId);
         res.json({
             success: true,
             message: `E-mail enviado para ${aluno.email}`,
-            emprestimos: aluno.emprestimos.length
+            emprestimos: aluno.emprestimos.length,
+            messageId: info.messageId
         });
     }
     catch (error) {
         console.error('Erro ao enviar e-mail:', error);
+        let errorMessage = 'Falha ao enviar e-mail';
+        let errorDetails = error instanceof Error ? error.message : String(error);
+        if (error instanceof Error && 'code' in error) {
+            switch (error.code) {
+                case 'EAUTH':
+                    errorMessage = 'Falha de autenticação no servidor de email';
+                    break;
+                case 'ECONNECTION':
+                    errorMessage = 'Não foi possível conectar ao servidor de email';
+                    break;
+                case 'ETIMEDOUT':
+                    errorMessage = 'Timeout ao conectar ao servidor de email';
+                    break;
+            }
+        }
         res.status(500).json({
-            error: 'Falha ao enviar e-mail',
-            details: error instanceof Error ? error.message : String(error)
+            error: errorMessage,
+            details: errorDetails
         });
     }
 }));
@@ -219,20 +263,18 @@ function generateEmailHtml(aluno) {
           <tr style="background-color: #f8f9fa;">
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
-            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Quantidade</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
           </tr>
         </thead>
         <tbody>
-          ${aluno.emprestimos.map(emp => {
+          ${aluno.emprestimos.map((emp) => {
         var _a;
         const livro = (_a = emp.livro) !== null && _a !== void 0 ? _a : { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
         return `
               <tr>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.quantidade}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">
                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
