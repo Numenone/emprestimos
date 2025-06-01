@@ -32,9 +32,6 @@ app.set('view engine', 'ejs');
 app.set('views', viewsPath);
 
 // Rotas da API
-app.use('/api/alunos', alunosRouter);
-app.use('/api/livros', livrosRouter);
-app.use('/api/emprestimos', emprestimosRouter);
 app.use('/alunos', alunosRouter);
 app.use('/livros', livrosRouter);
 app.use('/emprestimos', emprestimosRouter);
