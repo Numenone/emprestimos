@@ -44,9 +44,10 @@ app.post('/alunos', async (req, res) => {
 
 app.post('/alunos/:id/email', async (req, res) => {
   try {
-    await axios.post(`${API_URL}/alunos/${req.params.id}/email`);
+    await axios.post(`${API_URL}/api/alunos/${req.params.id}/email`);
     res.redirect('/?success=E-mail enviado com sucesso');
   } catch (error) {
+    console.error('Erro ao enviar email:', error.response?.data || error.message);
     res.redirect('/?error=Erro ao enviar e-mail');
   }
 });

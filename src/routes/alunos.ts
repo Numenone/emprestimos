@@ -48,12 +48,16 @@ const alunoSchema = z.object({
 });
 
 // Configuração do Nodemailer
+if (!process.env.MAILTRAP_USER || !process.env.MAILTRAP_PASS) {
+  console.warn('Atenção: Variáveis de ambiente do Mailtrap não configuradas!');
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
   port: parseInt(process.env.MAILTRAP_PORT || "2525"),
   auth: {
-    user: process.env.MAILTRAP_USER || '',
-    pass: process.env.MAILTRAP_PASS || ''
+    user: process.env.MAILTRAP_USER, 
+    pass: process.env.MAILTRAP_PASS 
   }
 });
 

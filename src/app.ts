@@ -14,7 +14,11 @@ const PORT: number = parseInt(process.env.PORT || '10000', 10);
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../../public')));
+const publicPath = path.join(__dirname, '../public');
+app.use(express.static(publicPath));
+
+// Verifique se o caminho está correto
+console.log(`Serving static files from: ${publicPath}`);
 
 const viewsPath = process.env.NODE_ENV === 'production'
   ? path.join(__dirname, 'views')
@@ -129,6 +133,16 @@ app.put('/livros/:id', async (req, res) => {
 });
 
 // Inicia servidor
+process.on('SIGTERM', async () => {
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
 
 app.listen(PORT, '0.0.0.0', () => { // Adicione '0.0.0.0'
   console.log(`Servidor rodando na porta ${PORT}`);
