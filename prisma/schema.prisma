@@ -35,14 +35,14 @@ model Emprestimo {
   id             Int      @id @default(autoincrement())
   alunoId        Int
   livroId        Int
-  dataEmprestimo DateTime @default(now())
-  dataDevolucao  DateTime
+  dataEmprestimo DateTime
+  dataDevolucao  DateTime?
   devolvido      Boolean  @default(false)
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")  // ← Adicione esta linha
+  createdAt      DateTime @default(now()) // Verifique se está definido
+  updatedAt      DateTime @updatedAt     // Verifique se está definido
   aluno          Aluno    @relation(fields: [alunoId], references: [id])
   livro          Livro    @relation(fields: [livroId], references: [id])
-
+  
   @@index([alunoId])
   @@index([livroId])
 }

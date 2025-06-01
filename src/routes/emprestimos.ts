@@ -75,27 +75,31 @@ router.post("/", async (req, res) => {
 
     // Transação
     console.log('Iniciando transação...');
-    const [novoEmprestimo] = await prisma.$transaction([
+    const [novoEmprestimo, livroAtualizado] = await prisma.$transaction([
       prisma.emprestimo.create({
         data: {
           alunoId,
           livroId,
           dataEmprestimo: new Date(),
           dataDevolucao: dataDevolucaoObj,
-          devolvido: false,
-          // createdAt e updatedAt serão preenchidos automaticamente
+          devolvido: false // Explícito
         },
         include: {
-          aluno: { select: { nome: true } },
-          livro: { select: { titulo: true } }
+          aluno: true,
+          livro: true
         }
       }),
       prisma.livro.update({
         where: { id: livroId },
         data: { quantidade: { decrement: 1 } }
       })
-    ]);
+    ]).catch(error => {
+      console.error('Erro na transação:', error);
+      throw error;
+    });
     
+    console.log('Resultado da transação:', { novoEmprestimo, livroAtualizado });
+
     console.log('Empréstimo criado:', novoEmprestimo);
     res.status(201).json({ success: true, emprestimo: novoEmprestimo });
   } catch (error) {
@@ -273,7 +277,9 @@ router.post('/:id/email', async (req, res) => {
                 <tr>
                   <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro.titulo}</td>
                   <td style="padding: 8px; border: 1px solid #ddd;">${emp.livro.autor}</td>
-                  <td style="padding: 8px; border: 1px solid #ddd;">${new Date(emp.dataDevolucao).toLocaleDateString('pt-BR')}</td>
+                  <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
+                  </td>
                 </tr>
               `).join('')}
             </tbody>
