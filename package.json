@@ -2,9 +2,10 @@
   "name": "biblioteca",
   "version": "1.0.0",
   "scripts": {
-    "start": "ts-node src/app.ts",
+    "start": "next start",
     "dev": "nodemon src/app.ts",
     "vercel-build": "prisma generate && prisma migrate deploy && next build",
+    "build": "next build",
     "prisma-generate": "prisma generate",
     "prisma-migrate": "prisma migrate deploy",
     "next-build": "next build"
