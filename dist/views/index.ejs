@@ -78,8 +78,6 @@
                 <td>
                   <!-- Botão que abre o modal (ver abaixo, continua JavaScript para modal) -->
                   <button type="button" onclick='openEditModal(<%= livro.id %>, "<%- livro.titulo %>", "<%- livro.autor %>", <%= livro.quantidade %>)'>Editar</button>
-                  <form action="/livros/<%= livro.id %>?_method=DELETE" method="POST" style="display: inline;">
-                    <button type="submit">Excluir</button>
                 </td>
               </tr>
             <% }); %>
