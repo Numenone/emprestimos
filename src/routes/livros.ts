@@ -14,24 +14,25 @@ interface LivroRequestBody {
 const livroSchema = z.object({
   titulo: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
   autor: z.string().min(3, "Autor deve ter pelo menos 3 caracteres"),
-  quantidade: z.number().int().positive("Quantidade deve ser um número positivo")
+  quantidade: z.number().int().positive("Quantidade deve ser um número inteiro positivo")
 });
 
-// Função para parsear e validar a quantidade
+// Função para converter e validar a quantidade
 function parseQuantidade(q: string | number): number | null {
   const n = typeof q === 'number' ? q : parseInt(q, 10);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
-// GET todos os livros
-router.get("/", async (req: Request, res: Response) => {
+// GET todos os livros (ordenados por título)
+router.get("/", async (_req: Request, res: Response) => {
   try {
     const livros = await prisma.livro.findMany({
       orderBy: { titulo: 'asc' }
     });
-    res.status(200).json(livros);
+    return res.status(200).json({ success: true, livros });
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
+      success: false,
       error: "Erro ao buscar livros",
       details: error instanceof Error ? error.message : String(error)
     });
@@ -45,14 +46,14 @@ router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) =
     if (quantidade === null) {
       return res.status(400).json({ 
         success: false,
-        error: "Quantidade inválida, deve ser número inteiro positivo"
+        error: "Quantidade inválida: deve ser um número inteiro positivo"
       });
     }
 
     const livroData = {
       titulo: req.body.titulo,
       autor: req.body.autor,
-      quantidade: quantidade
+      quantidade
     };
 
     const valida = livroSchema.safeParse(livroData);
@@ -75,13 +76,10 @@ router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) =
       }
     });
 
-    res.status(201).json({
-      success: true,
-      livro
-    });
+    return res.status(201).json({ success: true, livro });
   } catch (error) {
     console.error('Erro ao criar livro:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: "Erro ao criar livro no banco de dados",
       details: error instanceof Error ? error.message : String(error)
@@ -90,24 +88,25 @@ router.post("/", async (req: Request<{}, {}, LivroRequestBody>, res: Response) =
 });
 
 // GET livro por ID
-router.get("/:id", async (req: Request<{id: string}>, res: Response) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: "ID inválido" });
-    }
+router.get("/:id", async (req: Request<{ id: string }>, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id) || id <= 0) {
+    return res.status(400).json({ success: false, error: "ID inválido" });
+  }
 
+  try {
     const livro = await prisma.livro.findUnique({
       where: { id }
     });
 
     if (!livro) {
-      return res.status(404).json({ error: "Livro não encontrado" });
+      return res.status(404).json({ success: false, error: "Livro não encontrado" });
     }
 
-    res.status(200).json(livro);
+    return res.status(200).json({ success: true, livro });
   } catch (error) {
-    res.status(500).json({ 
+    return res.status(500).json({ 
+      success: false,
       error: "Erro ao buscar livro",
       details: error instanceof Error ? error.message : String(error)
     });
@@ -115,18 +114,18 @@ router.get("/:id", async (req: Request<{id: string}>, res: Response) => {
 });
 
 // PUT atualizar livro completo
-router.put("/:id", async (req: Request<{id: string}, {}, LivroRequestBody>, res: Response) => {
-  try {
-    const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: "ID inválido" });
-    }
+router.put("/:id", async (req: Request<{ id: string }, {}, LivroRequestBody>, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id) || id <= 0) {
+    return res.status(400).json({ success: false, error: "ID inválido" });
+  }
 
+  try {
     const quantidade = parseQuantidade(req.body.quantidade);
     if (quantidade === null) {
       return res.status(400).json({ 
         success: false,
-        error: "Quantidade inválida, deve ser número inteiro positivo"
+        error: "Quantidade inválida: deve ser um número inteiro positivo"
       });
     }
 
@@ -137,7 +136,6 @@ router.put("/:id", async (req: Request<{id: string}, {}, LivroRequestBody>, res:
     };
 
     const valida = livroSchema.safeParse(livroData);
-    
     if (!valida.success) {
       return res.status(400).json({ 
         success: false,
@@ -145,18 +143,21 @@ router.put("/:id", async (req: Request<{id: string}, {}, LivroRequestBody>, res:
       });
     }
 
+    // Verifica se o livro existe antes de atualizar
+    const existeLivro = await prisma.livro.findUnique({ where: { id } });
+    if (!existeLivro) {
+      return res.status(404).json({ success: false, error: "Livro não encontrado" });
+    }
+
     const livro = await prisma.livro.update({
       where: { id },
       data: valida.data
     });
-    
-    res.status(200).json({
-      success: true,
-      livro
-    });
+
+    return res.status(200).json({ success: true, livro });
   } catch (error) {
     console.error("Erro ao atualizar livro:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: "Erro ao atualizar livro",
       details: error instanceof Error ? error.message : String(error)

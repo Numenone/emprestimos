@@ -331,7 +331,8 @@ router.post('/:id/email', emailRateLimiter, async (req: Request, res: Response) 
         emprestimos: {
           where: { devolvido: false },
           include: { 
-            livro: { select: { titulo: true, autor: true } }
+            // Incluindo todos os campos necessários para o tipo Livro
+            livro: { select: { id: true, titulo: true, autor: true, quantidade: true } }
           },
           orderBy: { dataDevolucao: 'asc' }
         }

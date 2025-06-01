@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
-// Interfaces for better type safety
+// Interfaces para melhor tipagem
 interface Aluno {
   id: number;
   nome: string;
@@ -15,35 +15,39 @@ interface Aluno {
   matricula: string;
 }
 
+interface Livro {
+  id: number;
+  titulo: string;
+  autor: string;
+  quantidade: number;
+}
+
 interface EmprestimoComLivro {
   id: number;
   dataEmprestimo: Date;
   dataDevolucao: Date | null;
   devolvido: boolean;
-  livro: {
-    titulo: string;
-    autor: string;
-  } | null;
+  livro: Livro | null;
 }
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Rate limiting for email endpoint
+// Rate limiting para endpoint de email
 const emailRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
-  message: 'Too many email requests from this IP, please try again later'
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // máximo 5 requisições por IP nesse período
+  message: 'Muitas requisições de email desse IP, tente novamente mais tarde'
 });
 
-// Zod validation schema
+// Validação com Zod
 const alunoSchema = z.object({
   nome: z.string().min(3, { message: "Nome deve ter pelo menos 3 caracteres" }),
   email: z.string().email({ message: "Email inválido" }),
   matricula: z.string().min(5, { message: "Matrícula deve ter pelo menos 5 caracteres" })
 });
 
-// Email transporter configuration
+// Configuração do Nodemailer
 const transporter = nodemailer.createTransport({
   host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
   port: parseInt(process.env.MAILTRAP_PORT || "2525"),
@@ -53,7 +57,7 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// GET all students with pagination
+// GET todos os alunos com paginação
 router.get("/", async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const pageSize = parseInt(req.query.pageSize as string) || 10;
@@ -87,7 +91,7 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-// POST create student
+// POST criar aluno
 router.post("/", async (req: Request, res: Response) => {
   console.log('Dados recebidos no backend:', req.body);
   
@@ -115,7 +119,7 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
-// PUT update entire student
+// PUT atualizar aluno inteiro
 router.put("/:id", async (req: Request, res: Response) => {
   const valida = alunoSchema.safeParse(req.body);
   
@@ -127,7 +131,6 @@ router.put("/:id", async (req: Request, res: Response) => {
   }
 
   try {
-    // Check if student exists
     const exists = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) }
     });
@@ -150,7 +153,7 @@ router.put("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// PATCH partially update student
+// PATCH atualizar parcialmente o aluno
 router.patch("/:id", async (req: Request, res: Response) => {
   const partialAlunoSchema = alunoSchema.partial();
   const valida = partialAlunoSchema.safeParse(req.body);
@@ -163,7 +166,6 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 
   try {
-    // Check if student exists
     const exists = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) }
     });
@@ -186,7 +188,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// POST send email with active loans (with rate limiting)
+// POST enviar email com empréstimos ativos (com rate limiting)
 router.post("/:id/email", emailRateLimiter, async (req: Request, res: Response) => {
   try {
     const aluno = await prisma.aluno.findUnique({
@@ -194,7 +196,9 @@ router.post("/:id/email", emailRateLimiter, async (req: Request, res: Response) 
       include: {
         emprestimos: {
           where: { devolvido: false },
-          include: { livro: true },
+          include: { 
+            livro: { select: { id: true, titulo: true, autor: true, quantidade: true } }
+          },
           orderBy: { dataDevolucao: 'asc' }
         }
       }
@@ -238,7 +242,7 @@ router.post("/:id/email", emailRateLimiter, async (req: Request, res: Response) 
   }
 });
 
-// Helper function to generate email HTML
+// Função auxiliar para gerar HTML do email
 function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
   return `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -250,17 +254,19 @@ function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] })
           <tr style="background-color: #f8f9fa;">
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Quantidade</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
           </tr>
         </thead>
         <tbody>
           ${aluno.emprestimos.map(emp => {
-            const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A' };
+            const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
             return `
               <tr>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.quantidade}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">
                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
@@ -274,7 +280,7 @@ function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] })
   `;
 }
 
-// Proper shutdown handling
+// Encerramento correto do Prisma
 process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
