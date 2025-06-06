@@ -10,12 +10,6 @@ Banco de dados PostgreSQL
 
 Git (opcional)
 
-
-DATABASE_URL="postgresql://usuario:senha@localhost:5432/biblioteca?schema=public"
-PORT=3000
-MAILTRAP_USER=seu_usuario
-MAILTRAP_PASS=sua_senha
-
 # Aplicar migrações
 npx prisma migrate dev
 
