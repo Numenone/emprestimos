@@ -1,14 +1,15 @@
-// src/auth/jwt.ts
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'sua_chave_secreta_super_forte_123!@#';
+const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_please_change_in_production';
 
 interface TokenPayload {
   id: number;
   nivel: number;
+  iat: number;
+  exp: number;
 }
 
 export const generateToken = (userId: number, nivelAcesso: number): string => {
@@ -23,9 +24,14 @@ export const refreshToken = (userId: number, nivelAcesso: number): string => {
   });
 };
 
-export const authenticateJWT = async (req: Request & { aluno?: any; user?: any }, res: Response, next: NextFunction) => {
+interface AuthenticatedRequest extends Request {
+  aluno?: any;
+  user?: any;
+}
+
+export const authenticateJWT = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = authHeader?.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'Token de acesso não fornecido' });
@@ -34,9 +40,17 @@ export const authenticateJWT = async (req: Request & { aluno?: any; user?: any }
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
     
-    // Primeiro tenta verificar como aluno
+    // Check if token is expired
+    if (decoded.exp && Date.now() >= decoded.exp * 1000) {
+      return res.status(401).json({ error: 'Token expirado' });
+    }
+
+    // First try to verify as student
     const aluno = await prisma.aluno.findUnique({
-      where: { id: decoded.id, deleted: false }
+      where: { 
+        id: decoded.id,
+        deleted: false 
+      }
     });
 
     if (aluno) {
@@ -47,9 +61,12 @@ export const authenticateJWT = async (req: Request & { aluno?: any; user?: any }
       return next();
     }
 
-    // Se não for aluno, verifica como usuário
+    // If not student, verify as user
     const usuario = await prisma.usuario.findUnique({
-      where: { id: decoded.id, deleted: false }
+      where: { 
+        id: decoded.id,
+        deleted: false 
+      }
     });
 
     if (usuario) {
@@ -62,12 +79,13 @@ export const authenticateJWT = async (req: Request & { aluno?: any; user?: any }
 
     return res.status(403).json({ error: 'Usuário não encontrado' });
   } catch (error) {
-    res.status(401).json({ error: 'Token inválido ou expirado' });
+    console.error('JWT verification error:', error);
+    return res.status(401).json({ error: 'Token inválido' });
   }
 };
 
 export const checkPermission = (nivelRequerido: number) => {
-  return (req: Request & { aluno?: any; user?: any }, res: Response, next: NextFunction) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const user = req.user || req.aluno;
     
     if (!user || user.nivelAcesso < nivelRequerido) {

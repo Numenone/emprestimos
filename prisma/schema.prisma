@@ -4,93 +4,87 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Usuario {
-  id               Int         @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   nome             String
-  email            String      @unique
+  email            String    @unique
   senha            String
-  status           String      @default("INATIVO")
-  nivelAcesso      Int         @default(1)
   codigoAtivacao   String?
-  tentativasLogin  Int         @default(0)
-  bloqueado        Boolean     @default(false)
-  ultimoLogin      DateTime?
+  status           String    @default("INATIVO") // ATIVO, INATIVO
   perguntaSeguranca String?
   respostaSeguranca String?
-  deleted          Boolean     @default(false)
+  nivelAcesso      Int       @default(1) // 1=usuário, 2=moderador, 3=admin
+  bloqueado        Boolean   @default(false)
+  tentativasLogin  Int       @default(0)
+  ultimoLogin      DateTime?
+  deleted          Boolean   @default(false)
   deletedAt        DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   logs             Log[]
-  emprestimos      Emprestimo[]
 }
 
 model Aluno {
-  id               Int         @id @default(autoincrement())
+  id               Int       @id @default(autoincrement())
   nome             String
-  email            String      @unique
-  matricula        String      @unique
-  senha            String?
-  status           String      @default("INATIVO")
-  nivelAcesso      Int         @default(1)
+  email            String    @unique
+  matricula        String    @unique
+  senha            String
   codigoAtivacao   String?
-  tentativasLogin  Int         @default(0)
-  bloqueado        Boolean     @default(false)
-  ultimoLogin      DateTime?
+  status           String    @default("INATIVO") // ATIVO, INATIVO
   perguntaSeguranca String?
   respostaSeguranca String?
-  deleted          Boolean     @default(false)
+  nivelAcesso      Int       @default(1)
+  bloqueado        Boolean   @default(false)
+  tentativasLogin  Int       @default(0)
+  ultimoLogin      DateTime?
+  deleted          Boolean   @default(false)
   deletedAt        DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   emprestimos      Emprestimo[]
   logs             Log[]
 }
 
 model Livro {
-  id          Int         @id @default(autoincrement())
-  titulo      String
-  autor       String
-  quantidade  Int
-  deleted     Boolean     @default(false)
-  deletedAt   DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id         Int         @id @default(autoincrement())
+  titulo     String
+  autor      String
+  quantidade Int         @default(1)
+  deleted    Boolean     @default(false)
+  deletedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
   emprestimos Emprestimo[]
 }
 
 model Emprestimo {
   id             Int      @id @default(autoincrement())
-  alunoId        Int?
-  usuarioId      Int?
+  aluno          Aluno    @relation(fields: [alunoId], references: [id])
+  alunoId        Int
+  livro          Livro    @relation(fields: [livroId], references: [id])
   livroId        Int
-  dataEmprestimo DateTime
-  dataDevolucao  DateTime?
+  dataEmprestimo DateTime @default(now())
+  dataDevolucao  DateTime
   devolvido      Boolean  @default(false)
   deleted        Boolean  @default(false)
   deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  aluno          Aluno?   @relation(fields: [alunoId], references: [id])
-  usuario        Usuario? @relation(fields: [usuarioId], references: [id])
-  livro          Livro    @relation(fields: [livroId], references: [id])
-
-  @@index([alunoId])
-  @@index([usuarioId])
-  @@index([livroId])
 }
 
 model Log {
   id        Int      @id @default(autoincrement())
   acao      String
-  detalhes  String?
-  alunoId   Int?
+  detalhes  String
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
   usuarioId Int?
   aluno     Aluno?   @relation(fields: [alunoId], references: [id])
-  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  alunoId   Int?
   createdAt DateTime @default(now())
 }
