@@ -1,4 +1,3 @@
-
 import { PrismaClient, Usuario, Log } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
@@ -6,142 +5,268 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
-
+import path from 'path';
+import fs from 'fs';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
-const prisma = new PrismaClient() as PrismaClient & {
-  usuario: typeof PrismaClient.prototype.usuario;
-  log: typeof PrismaClient.prototype.log;
-};
+const prisma = new PrismaClient();
 const router = Router();
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'your_secure_secret_here';
+const REFRESH_SECRET = process.env.REFRESH_SECRET || 'your_refresh_secret_here';
+const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY || '1h';
+const REFRESH_EXPIRY = process.env.REFRESH_EXPIRY || '7d';
 
-// Configuração do Nodemailer
+// Rate limiting for authentication endpoints
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many attempts, please try again later'
+});
+
+// Email transporter configuration
 const transporter = nodemailer.createTransport({
-  host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
-  port: parseInt(process.env.MAILTRAP_PORT || "2525"),
+  host: process.env.MAIL_HOST || 'smtp.example.com',
+  port: parseInt(process.env.MAIL_PORT || '587'),
+  secure: process.env.MAIL_SECURE === 'true',
   auth: {
-    user: process.env.MAILTRAP_USER || '',
-    pass: process.env.MAILTRAP_PASS || ''
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // For self-signed certificates
   }
 });
 
-// Validação com Zod
+// Zod validation schemas
 const usuarioSchema = z.object({
-  nome: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
-  email: z.string().email("Email inválido"),
+  nome: z.string()
+    .min(3, "Nome deve ter pelo menos 3 caracteres")
+    .max(100, "Nome deve ter no máximo 100 caracteres"),
+  email: z.string()
+    .email("Email inválido")
+    .max(100, "Email deve ter no máximo 100 caracteres"),
   senha: z.string()
     .min(8, "Senha deve ter pelo menos 8 caracteres")
+    .max(100, "Senha deve ter no máximo 100 caracteres")
     .regex(/[A-Z]/, "Senha deve conter pelo menos uma letra maiúscula")
     .regex(/[a-z]/, "Senha deve conter pelo menos uma letra minúscula")
     .regex(/[0-9]/, "Senha deve conter pelo menos um número")
-    .regex(/[^A-Za-z0-9]/, "Senha deve conter pelo menos um símbolo")
+    .regex(/[^A-Za-z0-9]/, "Senha deve conter pelo menos um símbolo"),
+  perguntaSeguranca: z.string()
+    .min(5, "Pergunta deve ter pelo menos 5 caracteres")
+    .max(200, "Pergunta deve ter no máximo 200 caracteres")
+    .optional(),
+  respostaSeguranca: z.string()
+    .min(2, "Resposta deve ter pelo menos 2 caracteres")
+    .max(100, "Resposta deve ter no máximo 100 caracteres")
+    .optional()
 });
 
-// Middleware de autenticação
-function authenticateToken(req: Request & { user?: any }, res: Response, next: Function) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+const activateAccountSchema = z.object({
+  email: z.string().email(),
+  codigo: z.string().length(4, "Código deve ter 4 caracteres")
+});
 
-  if (!token) {
-    return res.status(401).json({ error: 'Token de acesso não fornecido' });
+const loginSchema = z.object({
+  email: z.string().email(),
+  senha: z.string().min(8)
+});
+
+const passwordResetSchema = z.object({
+  email: z.string().email(),
+  codigo: z.string().length(4, "Código deve ter 4 caracteres").optional(),
+  resposta: z.string().min(2).optional(),
+  novaSenha: z.string().min(8)
+}).superRefine((data, ctx) => {
+  if (!data.codigo && !data.resposta) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Código ou resposta de segurança é obrigatório"
+    });
   }
+});
 
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) {
-      return res.status(403).json({ error: 'Token inválido ou expirado' });
+// Utility functions
+function generateTokens(userId: number, nivelAcesso: number) {
+  const token = jwt.sign(
+    { id: userId, nivel: nivelAcesso }, 
+    JWT_SECRET, 
+    { expiresIn: TOKEN_EXPIRY }
+  );
+  
+  const refreshToken = jwt.sign(
+    { id: userId }, 
+    REFRESH_SECRET, 
+    { expiresIn: REFRESH_EXPIRY }
+  );
+  
+  return { token, refreshToken };
+}
+
+async function sendActivationEmail(email: string, nome: string, codigo: string) {
+  const mailOptions = {
+    from: process.env.MAIL_FROM || '"Biblioteca" <biblioteca@example.com>',
+    to: email,
+    subject: 'Ativação de conta',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2c3e50;">Olá ${nome},</h2>
+        <p>Seu código de ativação é: <strong style="font-size: 1.2em;">${codigo}</strong></p>
+        <p>Use este código para ativar sua conta em nossa plataforma.</p>
+        <p>Ou clique no link abaixo:</p>
+        <div style="margin: 20px 0;">
+          <a href="${process.env.APP_URL}/ativar-conta?email=${encodeURIComponent(email)}&codigo=${codigo}" 
+             style="display: inline-block; padding: 10px 20px; background-color: #5c43e7; color: white; text-decoration: none; border-radius: 4px;">
+            Ativar minha conta
+          </a>
+        </div>
+        <p style="font-size: 0.9em; color: #7f8c8d;">
+          Se você não solicitou este e-mail, por favor ignore esta mensagem.
+        </p>
+      </div>
+    `
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+async function logAction(acao: string, detalhes: string, usuarioId?: number) {
+  await prisma.log.create({
+    data: {
+      acao,
+      detalhes,
+      usuarioId
     }
-    req.user = user;
-    next();
   });
 }
 
-// POST criar usuário
-router.post("/", async (req: Request, res: Response) => {
-  const valida = usuarioSchema.safeParse(req.body);
+// Error handling middleware
+function handleError(res: Response, error: unknown, action: string) {
+  console.error(`Error during ${action}:`, error);
   
-  if (!valida.success) {
-    return res.status(400).json({ 
-      error: "Dados inválidos",
-      details: valida.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+  if (error instanceof z.ZodError) {
+    return res.status(400).json({
+      success: false,
+      error: "Validation error",
+      details: error.errors
     });
   }
+  
+  if (error instanceof Error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+  
+  res.status(500).json({
+    success: false,
+    error: "An unexpected error occurred"
+  });
+}
 
+// Routes
+router.post("/", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { nome, email, senha } = valida.data;
+    const validation = usuarioSchema.safeParse(req.body);
+    
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation error",
+        details: validation.error.errors
+      });
+    }
+
+    const { nome, email, senha, perguntaSeguranca, respostaSeguranca } = validation.data;
+    
+    // Check if email already exists
+    const existingUser = await prisma.usuario.findUnique({
+      where: { email }
+    });
+    
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: "Email já cadastrado"
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(senha, SALT_ROUNDS);
     const codigoAtivacao = Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    const usuario = await prisma.usuario.create({ 
-      data: { 
-        nome, 
-        email, 
-        senha: hashedPassword,
-        codigoAtivacao
-      } 
-    });
-
-    // Enviar email de ativação
-    const mailOptions = {
-      from: process.env.MAIL_FROM || '"Biblioteca" <biblioteca@example.com>',
-      to: email,
-      subject: 'Ativação de conta',
-      html: `
-        <p>Olá ${nome},</p>
-        <p>Seu código de ativação é: <strong>${codigoAtivacao}</strong></p>
-        <p>Use este código para ativar sua conta.</p>
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
-
-    // Registrar log
-    await prisma.log.create({
+    const usuario = await prisma.usuario.create({
       data: {
-        acao: 'CADASTRO_USUARIO',
-        detalhes: `Novo usuário cadastrado: ${email}`,
-        usuarioId: usuario.id
+        nome,
+        email,
+        senha: hashedPassword,
+        codigoAtivacao,
+        status: "INATIVO",
+        perguntaSeguranca,
+        respostaSeguranca: respostaSeguranca 
+          ? await bcrypt.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS) 
+          : null
       }
     });
 
-    res.status(201).json({ 
+    // Send activation email
+    await sendActivationEmail(email, nome, codigoAtivacao);
+
+    // Log the registration
+    await logAction('CADASTRO_USUARIO', `Novo usuário cadastrado: ${email}`, usuario.id);
+
+    res.status(201).json({
       success: true,
-      message: 'Usuário criado com sucesso. Verifique seu email para ativar a conta.'
+      message: "Usuário cadastrado com sucesso. Verifique seu email para ativar a conta."
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return res.status(400).json({ error: 'Email já cadastrado' });
-    }
-    res.status(500).json({ error: 'Erro ao criar usuário' });
+    handleError(res, error, "user registration");
   }
 });
 
-// POST ativar usuário
-router.post("/ativar", async (req: Request, res: Response) => {
-  const { email, codigo } = req.body;
-  
-  if (!email || !codigo) {
-    return res.status(400).json({ error: 'Email e código são obrigatórios' });
-  }
-
+router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const validation = activateAccountSchema.safeParse(req.body);
+    
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation error",
+        details: validation.error.errors
+      });
+    }
+
+    const { email, codigo } = validation.data;
+
+    const usuario = await prisma.usuario.findUnique({ 
+      where: { email, deleted: false } 
+    });
     
     if (!usuario) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
     }
 
     if (usuario.status === 'ATIVO') {
-      return res.status(400).json({ error: 'Usuário já está ativo' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Conta já está ativa' 
+      });
     }
 
     if (usuario.codigoAtivacao !== codigo) {
-      return res.status(400).json({ error: 'Código de ativação inválido' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Código de ativação inválido' 
+      });
     }
 
-    await prisma.usuario.update({
+    const updatedUser = await prisma.usuario.update({
       where: { id: usuario.id },
       data: { 
         status: 'ATIVO',
@@ -149,48 +274,72 @@ router.post("/ativar", async (req: Request, res: Response) => {
       }
     });
 
-    // Registrar log
-    await prisma.log.create({
-      data: {
-        acao: 'ATIVACAO_USUARIO',
-        detalhes: `Usuário ativado: ${email}`,
-        usuarioId: usuario.id
-      }
-    });
+    await logAction('ATIVACAO_CONTA', `Usuário ativou a conta: ${email}`, usuario.id);
 
-    res.json({ success: true, message: 'Conta ativada com sucesso' });
+    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+
+    res.json({ 
+      success: true,
+      data: {
+        token,
+        refreshToken,
+        usuario: {
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          nivelAcesso: usuario.nivelAcesso
+        }
+      },
+      message: 'Conta ativada com sucesso'
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao ativar usuário' });
+    handleError(res, error, "account activation");
   }
 });
 
-// POST login
-router.post("/login", async (req: Request, res: Response) => {
-  const { email, senha } = req.body;
-  
-  if (!email || !senha) {
-    return res.status(400).json({ error: 'Email e senha são obrigatórios' });
-  }
-
+router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const validation = loginSchema.safeParse(req.body);
     
-    if (!usuario) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation error",
+        details: validation.error.errors
+      });
+    }
+
+    const { email, senha } = validation.data;
+
+    const usuario = await prisma.usuario.findUnique({ 
+      where: { email, deleted: false } 
+    });
+
+    if (!usuario || !usuario.senha) {
+      return res.status(401).json({ 
+        success: false,
+        error: "Credenciais inválidas" 
+      });
     }
 
     if (usuario.bloqueado) {
-      return res.status(403).json({ error: 'Conta bloqueada. Entre em contato com o administrador.' });
+      return res.status(403).json({ 
+        success: false,
+        error: "Conta bloqueada. Entre em contato com o administrador." 
+      });
     }
 
-    if (usuario.status !== 'ATIVO') {
-      return res.status(403).json({ error: 'Conta não ativada. Verifique seu email.' });
+    if (usuario.status !== "ATIVO") {
+      return res.status(403).json({ 
+        success: false,
+        error: "Conta não ativada. Verifique seu email." 
+      });
     }
 
     const senhaValida = await bcrypt.compare(senha, usuario.senha);
     
     if (!senhaValida) {
-      // Incrementar tentativas de login
+      // Increment login attempts
       const tentativas = usuario.tentativasLogin + 1;
       const bloqueado = tentativas >= 3;
       
@@ -202,22 +351,23 @@ router.post("/login", async (req: Request, res: Response) => {
         }
       });
 
-      // Registrar log de tentativa falha
-      await prisma.log.create({
-        data: {
-          acao: 'TENTATIVA_LOGIN_FALHA',
-          detalhes: `Tentativa ${tentativas} de login falhou para ${email}`,
-          usuarioId: usuario.id
-        }
-      });
+      await logAction(
+        'TENTATIVA_LOGIN_FALHA', 
+        `Tentativa ${tentativas} de login falhou para ${email}`,
+        usuario.id
+      );
 
       return res.status(401).json({ 
+        success: false,
         error: 'Credenciais inválidas',
-        tentativasRestantes: 3 - tentativas
+        data: {
+          tentativasRestantes: 3 - tentativas,
+          bloqueado
+        }
       });
     }
 
-    // Resetar tentativas de login
+    // Reset login attempts on successful login
     await prisma.usuario.update({
       where: { id: usuario.id },
       data: { 
@@ -226,46 +376,92 @@ router.post("/login", async (req: Request, res: Response) => {
       }
     });
 
-    // Registrar log de login bem-sucedido
-    await prisma.log.create({
-      data: {
-        acao: 'LOGIN',
-        detalhes: `Login bem-sucedido para ${email}`,
-        usuarioId: usuario.id
-      }
-    });
+    await logAction('LOGIN', `Login bem-sucedido para ${email}`, usuario.id);
 
-    const token = jwt.sign(
-      { id: usuario.id, email: usuario.email, nivel: usuario.nivelAcesso },
-      JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
 
     res.json({ 
       success: true,
-      token,
-      ultimoLogin: usuario.ultimoLogin 
-        ? `Seu último acesso foi em ${usuario.ultimoLogin.toLocaleString()}` 
-        : 'Este é seu primeiro acesso'
+      data: {
+        token,
+        refreshToken,
+        usuario: {
+          id: usuario.id,
+          nome: usuario.nome,
+          email: usuario.email,
+          nivelAcesso: usuario.nivelAcesso,
+          ultimoLogin: usuario.ultimoLogin 
+            ? usuario.ultimoLogin.toISOString()
+            : null
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao realizar login' });
+    handleError(res, error, "user login");
   }
 });
 
-// POST recuperar senha
-router.post("/recuperar-senha", async (req: Request, res: Response) => {
-  const { email } = req.body;
+router.post("/refresh-token", async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
   
-  if (!email) {
-    return res.status(400).json({ error: 'Email é obrigatório' });
+  if (!refreshToken) {
+    return res.status(401).json({ 
+      success: false,
+      error: 'Refresh token não fornecido' 
+    });
   }
 
   try {
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as { id: number };
+    
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: decoded.id, deleted: false }
+    });
+
+    if (!usuario || usuario.bloqueado || usuario.status !== 'ATIVO') {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Acesso negado. Conta inativa ou bloqueada.' 
+      });
+    }
+
+    const { token, refreshToken: newRefreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+
+    res.json({ 
+      success: true,
+      data: {
+        token,
+        refreshToken: newRefreshToken
+      }
+    });
+  } catch (error) {
+    res.status(403).json({ 
+      success: false,
+      error: 'Refresh token inválido ou expirado' 
+    });
+  }
+});
+
+router.post("/recuperar-senha", authRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email é obrigatório' 
+      });
+    }
+
+    const usuario = await prisma.usuario.findUnique({ 
+      where: { email, deleted: false } 
+    });
     
     if (!usuario) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
     }
 
     const codigoRecuperacao = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -275,51 +471,91 @@ router.post("/recuperar-senha", async (req: Request, res: Response) => {
       data: { codigoAtivacao: codigoRecuperacao }
     });
 
-    // Enviar email com código de recuperação
-    const mailOptions = {
+    await transporter.sendMail({
       from: process.env.MAIL_FROM || '"Biblioteca" <biblioteca@example.com>',
       to: email,
       subject: 'Recuperação de senha',
       html: `
-        <p>Olá ${usuario.nome},</p>
-        <p>Seu código de recuperação é: <strong>${codigoRecuperacao}</strong></p>
-        <p>Use este código para redefinir sua senha.</p>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2c3e50;">Olá ${usuario.nome},</h2>
+          <p>Seu código de recuperação é: <strong style="font-size: 1.2em;">${codigoRecuperacao}</strong></p>
+          <p>Use este código para redefinir sua senha.</p>
+          <p>Ou clique no link abaixo:</p>
+          <div style="margin: 20px 0;">
+            <a href="${process.env.APP_URL}/redefinir-senha?email=${encodeURIComponent(email)}&codigo=${codigoRecuperacao}" 
+               style="display: inline-block; padding: 10px 20px; background-color: #5c43e7; color: white; text-decoration: none; border-radius: 4px;">
+              Redefinir minha senha
+            </a>
+          </div>
+          <p style="font-size: 0.9em; color: #7f8c8d;">
+            Se você não solicitou a redefinição de senha, por favor ignore este e-mail.
+          </p>
+        </div>
       `
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    await logAction(
+      'SOLICITACAO_RECUPERACAO_SENHA', 
+      `Solicitação de recuperação de senha para ${email}`,
+      usuario.id
+    );
 
-    res.json({ success: true, message: 'Código de recuperação enviado para seu email' });
+    res.json({ 
+      success: true, 
+      message: 'Código de recuperação enviado para seu email' 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao processar recuperação de senha' });
+    handleError(res, error, "password recovery request");
   }
 });
 
-// POST redefinir senha
-router.post("/redefinir-senha", async (req: Request, res: Response) => {
-  const { email, codigo, novaSenha } = req.body;
-  
-  if (!email || !codigo || !novaSenha) {
-    return res.status(400).json({ error: 'Email, código e nova senha são obrigatórios' });
-  }
-
+router.post("/redefinir-senha", authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const valida = usuarioSchema.pick({ senha: true }).safeParse({ senha: novaSenha });
-    if (!valida.success) {
-      return res.status(400).json({ 
-        error: "Senha inválida",
-        details: valida.error.errors.map(e => e.message).join(', ')
+    const validation = passwordResetSchema.safeParse(req.body);
+    
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation error",
+        details: validation.error.errors
       });
     }
 
-    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    const { email, codigo, resposta, novaSenha } = validation.data;
+
+    const usuario = await prisma.usuario.findUnique({ 
+      where: { email, deleted: false } 
+    });
     
     if (!usuario) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
     }
 
-    if (usuario.codigoAtivacao !== codigo) {
-      return res.status(400).json({ error: 'Código de recuperação inválido' });
+    // Verify either code or security answer
+    if (codigo) {
+      if (usuario.codigoAtivacao !== codigo) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Código de recuperação inválido' 
+        });
+      }
+    } else if (resposta && usuario.respostaSeguranca) {
+      const respostaValida = await bcrypt.compare(resposta.toLowerCase(), usuario.respostaSeguranca);
+      
+      if (!respostaValida) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Resposta de segurança incorreta' 
+        });
+      }
+    } else {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Código ou resposta de segurança é obrigatório' 
+      });
     }
 
     const hashedPassword = await bcrypt.hash(novaSenha, SALT_ROUNDS);
@@ -328,40 +564,332 @@ router.post("/redefinir-senha", async (req: Request, res: Response) => {
       where: { id: usuario.id },
       data: { 
         senha: hashedPassword,
-        codigoAtivacao: null
+        codigoAtivacao: null,
+        bloqueado: false,
+        tentativasLogin: 0
       }
     });
 
-    // Registrar log
-    await prisma.log.create({
+    await logAction(
+      'REDEFINICAO_SENHA', 
+      `Senha redefinida para ${email}`,
+      usuario.id
+    );
+
+    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+
+    res.json({ 
+      success: true,
       data: {
-        acao: 'REDEFINICAO_SENHA',
-        detalhes: `Senha redefinida para ${email}`,
-        usuarioId: usuario.id
-      }
+        token,
+        refreshToken
+      },
+      message: 'Senha redefinida com sucesso'
     });
-
-    res.json({ success: true, message: 'Senha redefinida com sucesso' });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao redefinir senha' });
+    handleError(res, error, "password reset");
   }
 });
 
-// GET logs (protegido, apenas admin)
-router.get("/logs", authenticateToken, async (req: any, res: Response) => {
-  if (req.user.nivel < 3) {
-    return res.status(403).json({ error: 'Acesso negado. Nível de acesso insuficiente.' });
-  }
+// Authenticated routes
+router.get("/perfil", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id, deleted: false },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        status: true,
+        nivelAcesso: true,
+        ultimoLogin: true,
+        perguntaSeguranca: true,
+        createdAt: true
+      }
+    });
 
+    if (!usuario) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
+    }
+
+    res.json({ 
+      success: true,
+      data: usuario 
+    });
+  } catch (error) {
+    handleError(res, error, "fetching user profile");
+  }
+});
+
+router.put("/perfil", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const { nome, perguntaSeguranca, respostaSeguranca } = req.body;
+
+    const updateData: any = {};
+    if (nome) updateData.nome = nome;
+    if (perguntaSeguranca) updateData.perguntaSeguranca = perguntaSeguranca;
+    if (respostaSeguranca) {
+      updateData.respostaSeguranca = await bcrypt.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS);
+    }
+
+    const usuario = await prisma.usuario.update({
+      where: { id: req.user.id, deleted: false },
+      data: updateData,
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        perguntaSeguranca: true
+      }
+    });
+
+    await logAction(
+      'ATUALIZACAO_PERFIL', 
+      `Usuário atualizou perfil: ${usuario.email}`,
+      usuario.id
+    );
+
+    res.json({ 
+      success: true,
+      data: usuario 
+    });
+  } catch (error) {
+    handleError(res, error, "updating user profile");
+  }
+});
+
+router.put("/alterar-senha", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const { senhaAtual, novaSenha } = req.body;
+
+    if (!senhaAtual || !novaSenha) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Senha atual e nova senha são obrigatórias' 
+      });
+    }
+
+    const validation = usuarioSchema.pick({ senha: true }).safeParse({ senha: novaSenha });
+    if (!validation.success) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Validation error",
+        details: validation.error.errors 
+      });
+    }
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: req.user.id, deleted: false }
+    });
+
+    if (!usuario || !usuario.senha) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Usuário não encontrado' 
+      });
+    }
+
+    const senhaValida = await bcrypt.compare(senhaAtual, usuario.senha);
+    if (!senhaValida) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Senha atual incorreta' 
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(novaSenha, SALT_ROUNDS);
+
+    await prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { 
+        senha: hashedPassword,
+        bloqueado: false,
+        tentativasLogin: 0
+      }
+    });
+
+    await logAction(
+      'ALTERACAO_SENHA', 
+      `Usuário alterou senha: ${usuario.email}`,
+      usuario.id
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Senha alterada com sucesso' 
+    });
+  } catch (error) {
+    handleError(res, error, "changing password");
+  }
+});
+
+router.get("/logs", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
   try {
     const logs = await prisma.log.findMany({
+      where: { usuarioId: req.user.id },
       orderBy: { createdAt: 'desc' },
-      include: { usuario: { select: { nome: true, email: true } } }
+      take: 50
     });
-    res.json({ success: true, logs });
+
+    res.json({ 
+      success: true,
+      data: logs 
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao buscar logs' });
+    handleError(res, error, "fetching user logs");
   }
 });
 
-export { router as usuariosRouter, authenticateToken };
+// Admin-only routes
+router.get("/", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const usuarios = await prisma.usuario.findMany({
+      where: { deleted: false },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        status: true,
+        nivelAcesso: true,
+        bloqueado: true,
+        ultimoLogin: true,
+        createdAt: true
+      }
+    });
+    
+    res.json({ 
+      success: true,
+      data: usuarios 
+    });
+  } catch (error) {
+    handleError(res, error, "fetching users");
+  }
+});
+
+router.put("/:id", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const { nivelAcesso, bloqueado } = req.body;
+
+    const usuario = await prisma.usuario.update({
+      where: { id: Number(req.params.id), deleted: false },
+      data: {
+        nivelAcesso,
+        bloqueado
+      },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        status: true,
+        nivelAcesso: true,
+        bloqueado: true
+      }
+    });
+
+    await logAction(
+      'ATUALIZACAO_USUARIO', 
+      `Usuário ${usuario.email} atualizado por ${req.user.email}`,
+      req.user.id
+    );
+
+    res.json({ 
+      success: true,
+      data: usuario 
+    });
+  } catch (error) {
+    handleError(res, error, "updating user");
+  }
+});
+
+router.delete("/:id", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const usuario = await prisma.usuario.update({
+      where: { id: Number(req.params.id) },
+      data: { 
+        deleted: true,
+        deletedAt: new Date(),
+        status: 'INATIVO',
+        bloqueado: true
+      }
+    });
+
+    await logAction(
+      'EXCLUSAO_USUARIO', 
+      `Usuário ${usuario.email} excluído por ${req.user.email}`,
+      req.user.id
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Usuário marcado como excluído com sucesso' 
+    });
+  } catch (error) {
+    handleError(res, error, "deleting user");
+  }
+});
+
+// Middleware functions
+function authenticateToken(req: Request & { user?: any }, res: Response, next: Function) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ 
+      success: false,
+      error: 'Token de acesso não fornecido' 
+    });
+  }
+
+  jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
+    if (err) {
+      return res.status(403).json({ 
+        success: false,
+        error: 'Token inválido ou expirado' 
+      });
+    }
+    
+    try {
+      const usuario = await prisma.usuario.findUnique({
+        where: { id: decoded.id, deleted: false }
+      });
+
+      if (!usuario || usuario.bloqueado || usuario.status !== 'ATIVO') {
+        return res.status(403).json({ 
+          success: false,
+          error: 'Acesso negado. Conta inativa ou bloqueada.' 
+        });
+      }
+      
+      req.user = {
+        id: usuario.id,
+        email: usuario.email,
+        nivel: usuario.nivelAcesso
+      };
+      next();
+    } catch (error) {
+      res.status(403).json({ 
+        success: false,
+        error: 'Erro ao verificar usuário' 
+      });
+    }
+  });
+}
+
+function checkAdmin(req: Request & { user?: any }, res: Response, next: Function) {
+  if (req.user.nivel < 3) {
+    return res.status(403).json({ 
+      success: false,
+      error: 'Acesso negado. Permissão insuficiente.',
+      data: {
+        requiredLevel: 3,
+        currentLevel: req.user.nivel
+      }
+    });
+  }
+  next();
+}
+
+export default router;

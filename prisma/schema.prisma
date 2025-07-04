@@ -8,6 +8,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Usuario {
+  id               Int         @id @default(autoincrement())
+  nome             String
+  email            String      @unique
+  senha            String
+  status           String      @default("INATIVO")
+  nivelAcesso      Int         @default(1)
+  codigoAtivacao   String?
+  tentativasLogin  Int         @default(0)
+  bloqueado        Boolean     @default(false)
+  ultimoLogin      DateTime?
+  perguntaSeguranca String?
+  respostaSeguranca String?
+  deleted          Boolean     @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  logs             Log[]
+  emprestimos      Emprestimo[]
+}
+
 model Aluno {
   id               Int         @id @default(autoincrement())
   nome             String
@@ -44,7 +65,8 @@ model Livro {
 
 model Emprestimo {
   id             Int      @id @default(autoincrement())
-  alunoId        Int
+  alunoId        Int?
+  usuarioId      Int?
   livroId        Int
   dataEmprestimo DateTime
   dataDevolucao  DateTime?
@@ -53,10 +75,12 @@ model Emprestimo {
   deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  aluno          Aluno    @relation(fields: [alunoId], references: [id])
+  aluno          Aluno?   @relation(fields: [alunoId], references: [id])
+  usuario        Usuario? @relation(fields: [usuarioId], references: [id])
   livro          Livro    @relation(fields: [livroId], references: [id])
 
   @@index([alunoId])
+  @@index([usuarioId])
   @@index([livroId])
 }
 
@@ -65,6 +89,8 @@ model Log {
   acao      String
   detalhes  String?
   alunoId   Int?
+  usuarioId Int?
   aluno     Aluno?   @relation(fields: [alunoId], references: [id])
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
   createdAt DateTime @default(now())
 }

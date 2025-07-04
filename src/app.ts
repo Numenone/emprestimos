@@ -6,6 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import alunosRouter from './routes/alunos';
 import livrosRouter from './routes/livros';
 import emprestimosRouter from './routes/emprestimos';
+import usuariosRouter from './routes/usuarios';
 import { authenticateJWT } from './auth/jwt';
 import fs from 'fs';
 
@@ -24,6 +25,7 @@ app.use(express.static(publicPath));
 
 // Rotas públicas
 app.use('/alunos', alunosRouter);
+app.use('/usuarios', usuariosRouter);
 
 // Rotas protegidas
 app.use('/livros', authenticateJWT, livrosRouter);
@@ -42,6 +44,76 @@ app.get('/status', (req, res) => {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Erro interno do servidor' });
+});
+
+// Backup route
+app.post('/backup', authenticateJWT, async (req, res) => {
+  try {
+    const backupDir = path.join(__dirname, '../../backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const backupFile = path.join(backupDir, `backup-${Date.now()}.json`);
+    const backupData = {
+      alunos: await prisma.aluno.findMany({ where: { deleted: false } }),
+      livros: await prisma.livro.findMany({ where: { deleted: false } }),
+      emprestimos: await prisma.emprestimo.findMany({ where: { deleted: false } }),
+      usuarios: await prisma.usuario.findMany({ where: { deleted: false } }),
+      logs: await prisma.log.findMany()
+    };
+
+    fs.writeFileSync(backupFile, JSON.stringify(backupData, null, 2));
+
+    res.json({ 
+      success: true, 
+      message: 'Backup realizado com sucesso',
+      file: backupFile
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao realizar backup' });
+  }
+});
+
+// Restore route
+app.post('/restore', authenticateJWT, async (req, res) => {
+  try {
+    const { backupFile } = req.body;
+    
+    if (!backupFile || !fs.existsSync(backupFile)) {
+      return res.status(400).json({ error: 'Arquivo de backup inválido' });
+    }
+
+    const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf-8'));
+
+    // Clear existing data (optional - you might want to merge instead)
+    await prisma.log.deleteMany();
+    await prisma.emprestimo.deleteMany();
+    await prisma.aluno.deleteMany();
+    await prisma.livro.deleteMany();
+    await prisma.usuario.deleteMany();
+
+    // Restore data
+    await prisma.aluno.createMany({ data: backupData.alunos });
+    await prisma.livro.createMany({ data: backupData.livros });
+    await prisma.emprestimo.createMany({ data: backupData.emprestimos });
+    await prisma.usuario.createMany({ data: backupData.usuarios });
+    await prisma.log.createMany({ data: backupData.logs });
+
+    res.json({ 
+      success: true, 
+      message: 'Restauração realizada com sucesso',
+      restoredItems: {
+        alunos: backupData.alunos.length,
+        livros: backupData.livros.length,
+        emprestimos: backupData.emprestimos.length,
+        usuarios: backupData.usuarios.length,
+        logs: backupData.logs.length
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao restaurar backup' });
+  }
 });
 
 // Inicialização do servidor
