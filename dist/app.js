@@ -20,6 +20,7 @@ const emprestimos_1 = __importDefault(require("./routes/emprestimos"));
 const client_1 = require("@prisma/client");
 const method_override_1 = __importDefault(require("method-override"));
 const alunos_1 = __importDefault(require("./routes/alunos"));
+const usuarios_1 = require("./routes/usuarios");
 const prisma = new client_1.PrismaClient();
 const app = (0, express_1.default)();
 const PORT = parseInt(process.env.PORT || '10000', 10);
@@ -41,6 +42,7 @@ app.set('views', viewsPath);
 app.use('/alunos', alunos_1.default);
 app.use('/livros', livros_1.default);
 app.use('/emprestimos', emprestimos_1.default);
+app.use('/usuarios', usuarios_1.usuariosRouter);
 app.use((0, method_override_1.default)('_method'));
 app.use(express_1.default.urlencoded({ extended: true }));
 // Rota principal que renderiza a página
@@ -71,7 +73,7 @@ app.get('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     }
 }));
 // Rotas do frontend (para formulários)
-app.post('/alunos', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/alunos', usuarios_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.aluno.create({ data: req.body });
         res.redirect('/?success=Aluno cadastrado com sucesso');
@@ -80,7 +82,7 @@ app.post('/alunos', (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         res.redirect('/?error=Erro ao criar aluno');
     }
 }));
-app.post('/livros', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/livros', usuarios_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.livro.create({
             data: Object.assign(Object.assign({}, req.body), { quantidade: parseInt(req.body.quantidade) })
@@ -91,7 +93,7 @@ app.post('/livros', (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         res.redirect('/?error=Erro ao cadastrar livro');
     }
 }));
-app.post('/emprestimos', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/emprestimos', usuarios_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.emprestimo.create({
             data: {
@@ -108,7 +110,7 @@ app.post('/emprestimos', (req, res) => __awaiter(void 0, void 0, void 0, functio
         res.redirect('/?error=Erro ao registrar empréstimo');
     }
 }));
-app.post('/emprestimos/:id/devolver', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.post('/emprestimos/:id/devolver', usuarios_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.emprestimo.update({
             where: { id: parseInt(req.params.id) },

@@ -1,4 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+
+import { PrismaClient, Usuario, Log } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
@@ -6,9 +7,13 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
 
+
 dotenv.config();
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient() as PrismaClient & {
+  usuario: typeof PrismaClient.prototype.usuario;
+  log: typeof PrismaClient.prototype.log;
+};
 const router = Router();
 const SALT_ROUNDS = 10;
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
@@ -36,7 +41,7 @@ const usuarioSchema = z.object({
 });
 
 // Middleware de autenticação
-export const authenticateToken = (req: any, res: Response, next: Function) => {
+function authenticateToken(req: Request & { user?: any }, res: Response, next: Function) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -51,7 +56,7 @@ export const authenticateToken = (req: any, res: Response, next: Function) => {
     req.user = user;
     next();
   });
-};
+}
 
 // POST criar usuário
 router.post("/", async (req: Request, res: Response) => {
