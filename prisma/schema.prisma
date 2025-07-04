@@ -1,30 +1,44 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+model Aluno {
+  id               Int         @id @default(autoincrement())
+  nome             String
+  email            String      @unique
+  matricula        String      @unique
+  senha            String?
+  status           String      @default("INATIVO")
+  nivelAcesso      Int         @default(1)
+  codigoAtivacao   String?
+  tentativasLogin  Int         @default(0)
+  bloqueado        Boolean     @default(false)
+  ultimoLogin      DateTime?
+  perguntaSeguranca String?
+  respostaSeguranca String?
+  deleted          Boolean     @default(false)
+  deletedAt        DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  emprestimos      Emprestimo[]
+  logs             Log[]
 }
 
 model Livro {
-  id          Int      @id @default(autoincrement())
+  id          Int         @id @default(autoincrement())
   titulo      String
   autor       String
   quantidade  Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  emprestimos Emprestimo[]
-}
-
-model Aluno {
-  id          Int      @id @default(autoincrement())
-  nome        String
-  email       String   @unique
-  matricula   String   @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  deleted     Boolean     @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   emprestimos Emprestimo[]
 }
 
@@ -35,6 +49,8 @@ model Emprestimo {
   dataEmprestimo DateTime
   dataDevolucao  DateTime?
   devolvido      Boolean  @default(false)
+  deleted        Boolean  @default(false)
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   aluno          Aluno    @relation(fields: [alunoId], references: [id])
@@ -44,27 +60,11 @@ model Emprestimo {
   @@index([livroId])
 }
 
-model Usuario {
-  id          Int      @id @default(autoincrement())
-  nome        String
-  email       String   @unique
-  senha       String
-  status      String   @default("INATIVO")
-  codigoAtivacao String?
-  nivelAcesso Int      @default(1)
-  ultimoLogin DateTime?
-  tentativasLogin Int   @default(0)
-  bloqueado   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  logs        Log[]
-}
-
 model Log {
-  id          Int      @id @default(autoincrement())
-  acao        String
-  detalhes    String?
-  usuarioId   Int
-  createdAt   DateTime @default(now())
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+  id        Int      @id @default(autoincrement())
+  acao      String
+  detalhes  String?
+  alunoId   Int?
+  aluno     Aluno?   @relation(fields: [alunoId], references: [id])
+  createdAt DateTime @default(now())
 }

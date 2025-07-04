@@ -1,131 +1,60 @@
 import { PrismaClient } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-import rateLimit from 'express-rate-limit';
-
-dotenv.config();
-
-// Interfaces for type safety
-interface Emprestimo {
-  id: number;
-  alunoId: number;
-  livroId: number;
-  dataEmprestimo: Date;
-  dataDevolucao: Date | null;
-  devolvido: boolean;
-}
-
-interface Livro {
-  id: number;
-  titulo: string;
-  autor: string;
-  quantidade: number;
-}
-
-interface Aluno {
-  id: number;
-  nome: string;
-  email: string;
-  matricula: string;
-}
+import { authenticateJWT } from '../auth/jwt';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Rate limiting for email endpoint
-const emailRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
-  message: 'Too many email requests from this IP, please try again later'
+router.use(authenticateJWT);
+
+const emprestimoSchema = z.object({
+  alunoId: z.number().int().positive(),
+  livroId: z.number().int().positive(),
+  dataDevolucao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 });
 
-// Email transporter configuration
-const transporter = nodemailer.createTransport({
-  host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
-  port: parseInt(process.env.MAILTRAP_PORT || "2525"),
-  auth: {
-    user: process.env.MAILTRAP_USER || '',
-    pass: process.env.MAILTRAP_PASS || ''
-  }
-});
-
-// Validation schemas
-const EmprestimoSchema = {
-  create: z.object({
-    alunoId: z.number().int().positive("ID do aluno inválido"),
-    livroId: z.number().int().positive("ID do livro inválido"),
-    dataDevolucao: z.string().refine(date => {
-      return !isNaN(Date.parse(date));
-    }, {
-      message: "Data de devolução inválida (use formato YYYY-MM-DD)"
-    })
-  }),
-  update: z.object({
-    alunoId: z.number().int().positive("ID do aluno inválido").optional(),
-    livroId: z.number().int().positive("ID do livro inválido").optional(),
-    dataDevolucao: z.string().datetime({ offset: true }).optional()
-  })
-};
-
-// Error handling helper
-const handleError = (res: Response, error: unknown, context: string) => {
-  console.error(`Erro em ${context}:`, error);
-  const message = error instanceof Error ? error.message : 'Erro desconhecido';
-  res.status(500).json({ 
-    success: false,
-    error: `Erro ao ${context}`,
-    details: message
-  });
-};
-
-// POST - Create loan
+// POST criar empréstimo
 router.post("/", async (req: Request, res: Response) => {
-  const validation = EmprestimoSchema.create.safeParse(req.body);
+  const validation = emprestimoSchema.safeParse(req.body);
   
   if (!validation.success) {
     return res.status(400).json({ 
-      success: false,
-      error: validation.error.errors.map(e => e.message).join(', ')
+      error: "Dados inválidos",
+      details: validation.error.errors 
     });
   }
 
   try {
     const { alunoId, livroId, dataDevolucao } = validation.data;
-    const dataDevolucaoObj = new Date(dataDevolucao);
 
-    // Verify book availability
-    const livro = await prisma.livro.findUnique({ where: { id: livroId } });
+    // Verificar se aluno existe e está ativo
+    const aluno = await prisma.aluno.findUnique({
+      where: { id: alunoId, deleted: false, status: 'ATIVO', bloqueado: false }
+    });
+
+    if (!aluno) {
+      return res.status(400).json({ error: 'Aluno não encontrado ou inativo' });
+    }
+
+    // Verificar se livro existe e está disponível
+    const livro = await prisma.livro.findUnique({
+      where: { id: livroId, deleted: false }
+    });
+
     if (!livro || livro.quantidade <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Livro não disponível" 
-      });
+      return res.status(400).json({ error: 'Livro não disponível' });
     }
 
-    // Verify student exists
-    const alunoExists = await prisma.aluno.findUnique({ where: { id: alunoId } });
-    if (!alunoExists) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Aluno não encontrado" 
-      });
-    }
-
-    // Transaction
-    const [novoEmprestimo] = await prisma.$transaction([
+    // Criar empréstimo e atualizar quantidade
+    const [emprestimo] = await prisma.$transaction([
       prisma.emprestimo.create({
         data: {
           alunoId,
           livroId,
           dataEmprestimo: new Date(),
-          dataDevolucao: dataDevolucaoObj,
-          devolvido: false,
-        },
-        include: {
-          aluno: { select: { nome: true, email: true } },
-          livro: { select: { titulo: true, autor: true } }
+          dataDevolucao: new Date(dataDevolucao),
+          devolvido: false
         }
       }),
       prisma.livro.update({
@@ -134,12 +63,9 @@ router.post("/", async (req: Request, res: Response) => {
       })
     ]);
 
-    res.status(201).json({ 
-      success: true, 
-      emprestimo: novoEmprestimo 
-    });
+    res.status(201).json({ success: true, emprestimo });
   } catch (error) {
-    handleError(res, error, "criar empréstimo");
+    res.status(500).json({ error: 'Erro ao criar empréstimo' });
   }
 });
 
