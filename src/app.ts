@@ -6,7 +6,7 @@ import emprestimosRouter from './routes/emprestimos';
 import { PrismaClient } from '@prisma/client';
 import methodOverride from 'method-override';
 import alunosRouter from './routes/alunos';
-
+import { usuariosRouter, authenticateToken } from './routes/usuarios';
 
 
 const prisma = new PrismaClient();
@@ -35,6 +35,7 @@ app.set('views', viewsPath);
 app.use('/alunos', alunosRouter);
 app.use('/livros', livrosRouter);
 app.use('/emprestimos', emprestimosRouter);
+app.use('/usuarios', usuariosRouter);
 app.use(methodOverride('_method'));
 app.use(express.urlencoded({ extended: true }));
 
@@ -68,7 +69,7 @@ app.get('/', async (req, res) => {
 });
 
 // Rotas do frontend (para formulários)
-app.post('/alunos', async (req, res) => {
+app.post('/alunos', authenticateToken, async (req, res) => {
   try {
     await prisma.aluno.create({ data: req.body });
     res.redirect('/?success=Aluno cadastrado com sucesso');
@@ -77,7 +78,7 @@ app.post('/alunos', async (req, res) => {
   }
 });
 
-app.post('/livros', async (req, res) => {
+app.post('/livros', authenticateToken, async (req, res) => {
   try {
     await prisma.livro.create({ 
       data: {
@@ -91,7 +92,7 @@ app.post('/livros', async (req, res) => {
   }
 });
 
-app.post('/emprestimos', async (req, res) => {
+app.post('/emprestimos', authenticateToken, async (req, res) => {
   try {
     await prisma.emprestimo.create({
       data: {
@@ -108,7 +109,7 @@ app.post('/emprestimos', async (req, res) => {
   }
 });
 
-app.post('/emprestimos/:id/devolver', async (req, res) => {
+app.post('/emprestimos/:id/devolver', authenticateToken, async (req, res) => {
   try {
     await prisma.emprestimo.update({
       where: { id: parseInt(req.params.id) },
