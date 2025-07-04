@@ -11,19 +11,19 @@ interface TokenPayload {
   nivel: number;
 }
 
-export const generateToken = (alunoId: number, nivelAcesso: number): string => {
-  return jwt.sign({ id: alunoId, nivel: nivelAcesso }, JWT_SECRET, {
+export const generateToken = (userId: number, nivelAcesso: number): string => {
+  return jwt.sign({ id: userId, nivel: nivelAcesso }, JWT_SECRET, {
     expiresIn: '1h'
   });
 };
 
-export const refreshToken = (alunoId: number, nivelAcesso: number): string => {
-  return jwt.sign({ id: alunoId, nivel: nivelAcesso }, JWT_SECRET, {
+export const refreshToken = (userId: number, nivelAcesso: number): string => {
+  return jwt.sign({ id: userId, nivel: nivelAcesso }, JWT_SECRET, {
     expiresIn: '7d'
   });
 };
 
-export const authenticateJWT = async (req: Request & { aluno?: any }, res: Response, next: NextFunction) => {
+export const authenticateJWT = async (req: Request & { aluno?: any; user?: any }, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -33,28 +33,48 @@ export const authenticateJWT = async (req: Request & { aluno?: any }, res: Respo
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    
+    // Primeiro tenta verificar como aluno
     const aluno = await prisma.aluno.findUnique({
       where: { id: decoded.id, deleted: false }
     });
 
-    if (!aluno || aluno.bloqueado || aluno.status !== 'ATIVO') {
-      return res.status(403).json({ error: 'Acesso negado. Conta inativa ou bloqueada.' });
+    if (aluno) {
+      if (aluno.bloqueado || aluno.status !== 'ATIVO') {
+        return res.status(403).json({ error: 'Acesso negado. Conta inativa ou bloqueada.' });
+      }
+      req.aluno = aluno;
+      return next();
     }
 
-    req.aluno = aluno;
-    next();
+    // Se não for aluno, verifica como usuário
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: decoded.id, deleted: false }
+    });
+
+    if (usuario) {
+      if (usuario.bloqueado || usuario.status !== 'ATIVO') {
+        return res.status(403).json({ error: 'Acesso negado. Conta inativa ou bloqueada.' });
+      }
+      req.user = usuario;
+      return next();
+    }
+
+    return res.status(403).json({ error: 'Usuário não encontrado' });
   } catch (error) {
     res.status(401).json({ error: 'Token inválido ou expirado' });
   }
 };
 
 export const checkPermission = (nivelRequerido: number) => {
-  return (req: Request & { aluno?: any }, res: Response, next: NextFunction) => {
-    if (!req.aluno || req.aluno.nivelAcesso < nivelRequerido) {
+  return (req: Request & { aluno?: any; user?: any }, res: Response, next: NextFunction) => {
+    const user = req.user || req.aluno;
+    
+    if (!user || user.nivelAcesso < nivelRequerido) {
       return res.status(403).json({ 
         error: 'Acesso negado. Permissão insuficiente.',
         requiredLevel: nivelRequerido,
-        currentLevel: req.aluno?.nivelAcesso
+        currentLevel: user?.nivelAcesso
       });
     }
     next();

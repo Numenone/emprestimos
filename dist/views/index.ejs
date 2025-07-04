@@ -4,11 +4,23 @@
   <meta charset="UTF-8">
   <title>Sistema de Biblioteca</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/emprestimos/public/styles.css">
 </head>
 <body>
   <div class="container">
-    <h1>Biblioteca Digital</h1>
+    <!-- Header with Auth Controls -->
+    <header>
+      <h1>Biblioteca Digital</h1>
+      <div id="authControls">
+        <% if (typeof user !== 'undefined' && user) { %>
+          <span>Bem-vindo, <%= user.nome %> (Nível <%= user.nivelAcesso %>)</span>
+          <button onclick="logout()">Sair</button>
+        <% } else { %>
+          <button onclick="showModal('loginModal')">Login</button>
+          <button onclick="showModal('registerModal')">Cadastrar</button>
+        <% } %>
+      </div>
+    </header>
 
     <% if (typeof success !== 'undefined' && success) { %>
       <div class="alert alert-success"><%= success %></div>
@@ -20,114 +32,236 @@
       </div>
     <% } %>
 
-    <!-- Seção de Alunos -->
-    <section>
-      <h2>Cadastrar Aluno</h2>
-      <form id="alunoForm" action="/alunos" method="POST">
-        <input type="text" name="nome" placeholder="Nome" required>
-        <input type="email" name="email" placeholder="E-mail" required>
-        <input type="text" name="matricula" placeholder="Matrícula" required>
-        <button type="submit">Cadastrar</button>
-      </form>
+    <!-- Main Content (only visible when authenticated) -->
+    <% if (typeof user !== 'undefined' && user) { %>
+      <!-- Admin Section (only for level 3 users) -->
+      <% if (user.nivelAcesso >= 3) { %>
+        <section>
+          <h2>Administração</h2>
+          <div class="admin-actions">
+            <button onclick="showModal('userManagementModal')">Gerenciar Usuários</button>
+            <button onclick="backupDatabase()">Fazer Backup</button>
+            <button onclick="showModal('restoreModal')">Restaurar Backup</button>
+          </div>
+        </section>
+      <% } %>
 
-      <h3>Alunos Cadastrados</h3>
-      <% if (alunos && alunos.length > 0) { %>
-        <table>
-          <thead>
-            <tr><th>Nome</th><th>E-mail</th><th>Matrícula</th><th>Ações</th></tr>
-          </thead>
-          <tbody>
-            <% alunos.forEach(aluno => { %>
-              <tr>
-                <td><%= aluno.nome %></td>
-                <td><%= aluno.email %></td>
-                <td><%= aluno.matricula %></td>
-                <td>
-                  <button onclick="openEditAlunoModal('<%= aluno.id %>', '<%= aluno.nome %>', '<%= aluno.email %>', '<%= aluno.matricula %>')">Editar</button>
-                  <button onclick="deleteAluno('<%= aluno.id %>')">Excluir</button>
-                  <button onclick="enviarEmailAluno('<%= aluno.id %>', '<%= aluno.email %>')">Enviar E-mail</button>
-                </td>
-              </tr>
+      <!-- Seção de Alunos -->
+      <section>
+        <h2>Cadastrar Aluno</h2>
+        <form id="alunoForm">
+          <input type="text" name="nome" placeholder="Nome" required>
+          <input type="email" name="email" placeholder="E-mail" required>
+          <input type="text" name="matricula" placeholder="Matrícula" required>
+          <input type="password" name="senha" placeholder="Senha" required>
+          <input type="text" name="perguntaSeguranca" placeholder="Pergunta de segurança">
+          <input type="text" name="respostaSeguranca" placeholder="Resposta de segurança">
+          <button type="submit">Cadastrar</button>
+        </form>
+
+        <h3>Alunos Cadastrados</h3>
+        <% if (alunos && alunos.length > 0) { %>
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>E-mail</th><th>Matrícula</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+              <% alunos.forEach(aluno => { %>
+                <tr>
+                  <td><%= aluno.nome %></td>
+                  <td><%= aluno.email %></td>
+                  <td><%= aluno.matricula %></td>
+                  <td><%= aluno.status %></td>
+                  <td>
+                    <button onclick="openEditAlunoModal('<%= aluno.id %>', '<%= aluno.nome %>', '<%= aluno.email %>', '<%= aluno.matricula %>', '<%= aluno.status %>')">Editar</button>
+                    <% if (user.nivelAcesso >= 3) { %>
+                      <button onclick="deleteAluno('<%= aluno.id %>')">Excluir</button>
+                    <% } %>
+                    <button onclick="enviarEmailAluno('<%= aluno.id %>', '<%= escapeHtml(aluno.email) %>')">Enviar E-mail</button>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } else { %><p>Nenhum aluno cadastrado.</p><% } %>
+      </section>
+
+      <!-- Seção de Livros -->
+      <section>
+        <h2>Cadastrar Livro</h2>
+        <form id="livroForm">
+          <input type="text" name="titulo" placeholder="Título" required>
+          <input type="text" name="autor" placeholder="Autor" required>
+          <input type="number" name="quantidade" placeholder="Quantidade" min="1" required>
+          <button type="submit">Cadastrar</button>
+        </form>
+
+        <h3>Livros Cadastrados</h3>
+        <% if (livros && livros.length > 0) { %>
+          <table>
+            <thead>
+              <tr><th>Título</th><th>Autor</th><th>Disponíveis</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+              <% livros.forEach(livro => { %>
+                <tr>
+                  <td><%= livro.titulo %></td>
+                  <td><%= livro.autor %></td>
+                  <td><%= livro.quantidade %></td>
+                  <td>
+                    <button onclick="openEditLivroModal('<%= livro.id %>', '<%= livro.titulo %>', '<%= livro.autor %>', '<%= livro.quantidade %>')">Editar</button>
+                    <% if (user.nivelAcesso >= 2) { %>
+                      <button onclick="deleteLivro('<%= livro.id %>')">Excluir</button>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } else { %><p>Nenhum livro cadastrado.</p><% } %>
+      </section>
+
+      <!-- Seção de Empréstimos -->
+      <section>
+        <h2>Registrar Empréstimo</h2>
+        <form id="emprestimoForm">
+          <select name="alunoId" required>
+            <option value="">Selecione um aluno</option>
+            <% alunos && alunos.forEach(aluno => { %>
+              <% if (aluno.status === 'ATIVO' && !aluno.bloqueado) { %>
+                <option value="<%= aluno.id %>"><%= aluno.nome %></option>
+              <% } %>
             <% }); %>
-          </tbody>
-        </table>
-      <% } else { %><p>Nenhum aluno cadastrado.</p><% } %>
-    </section>
-
-    <!-- Seção de Livros -->
-    <section>
-      <h2>Cadastrar Livro</h2>
-      <form id="livroForm" action="/livros" method="POST">
-        <input type="text" name="titulo" placeholder="Título" required>
-        <input type="text" name="autor" placeholder="Autor" required>
-        <input type="number" name="quantidade" placeholder="Quantidade" min="1" required>
-        <button type="submit">Cadastrar</button>
-      </form>
-
-      <h3>Livros Cadastrados</h3>
-      <% if (livros && livros.length > 0) { %>
-        <table>
-          <thead>
-            <tr><th>Título</th><th>Autor</th><th>Quantidade</th><th>Ações</th></tr>
-          </thead>
-          <tbody>
-            <% livros.forEach(livro => { %>
-              <tr>
-                <td><%= livro.titulo %></td>
-                <td><%= livro.autor %></td>
-                <td><%= livro.quantidade %></td>
-                <td>
-                  <button onclick="openEditLivroModal('<%= livro.id %>', '<%= livro.titulo %>', '<%= livro.autor %>', '<%= livro.quantidade %>')">Editar</button>
-                  <button onclick="deleteLivro('<%= livro.id %>')">Excluir</button>
-                </td>
-              </tr>
+          </select>
+          <select name="livroId" required>
+            <option value="">Selecione um livro</option>
+            <% livros && livros.forEach(livro => { %>
+              <% if (livro.quantidade > 0) { %>
+                <option value="<%= livro.id %>"><%= livro.titulo %> (Disponíveis: <%= livro.quantidade %>)</option>
+              <% } %>
             <% }); %>
-          </tbody>
-        </table>
-      <% } else { %><p>Nenhum livro cadastrado.</p><% } %>
-    </section>
+          </select>
+          <input type="date" name="dataDevolucao" required>
+          <button type="submit">Registrar</button>
+        </form>
 
-    <!-- Seção de Empréstimos -->
-    <section>
-      <h2>Registrar Empréstimo</h2>
-      <form id="emprestimoForm" action="/emprestimos" method="POST">
-        <select name="alunoId" required>
-          <option value="">Selecione um aluno</option>
-          <% alunos && alunos.forEach(aluno => { %>
-            <option value="<%= aluno.id %>"><%= aluno.nome %></option>
-          <% }); %>
-        </select>
-        <select name="livroId" required>
-          <option value="">Selecione um livro</option>
-          <% livros && livros.forEach(livro => { %>
-            <option value="<%= livro.id %>"><%= livro.titulo %></option>
-          <% }); %>
-        </select>
-        <input type="date" name="dataDevolucao" required>
-        <button type="submit">Registrar</button>
-      </form>
+        <h3>Empréstimos Ativos</h3>
+        <% if (emprestimos && emprestimos.length > 0) { %>
+          <table>
+            <thead>
+              <tr><th>Aluno</th><th>Livro</th><th>Data Empréstimo</th><th>Data Devolução</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+              <% emprestimos.forEach(emp => { %>
+                <tr class="<%= emp.dataDevolucao < new Date() && !emp.devolvido ? 'atrasado' : '' %>">
+                  <td><%= emp.aluno?.nome %></td>
+                  <td><%= emp.livro?.titulo %></td>
+                  <td><%= new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR') %></td>
+                  <td><%= new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') %></td>
+                  <td>
+                    <button onclick="devolverEmprestimo('<%= emp.id %>')">Devolver</button>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        <% } else { %><p>Nenhum empréstimo ativo no momento.</p><% } %>
+      </section>
+    <% } else { %>
+      <div class="welcome-message">
+        <h2>Bem-vindo ao Sistema de Biblioteca</h2>
+        <p>Faça login ou cadastre-se para acessar o sistema.</p>
+      </div>
+    <% } %>
 
-      <h3>Empréstimos Ativos</h3>
-      <% if (emprestimos && emprestimos.length > 0) { %>
-        <table>
-          <thead>
-            <tr><th>Aluno</th><th>Livro</th><th>Data Devolução</th><th>Ações</th></tr>
-          </thead>
-          <tbody>
-            <% emprestimos.forEach(emp => { %>
-              <tr>
-                <td><%= emp.aluno?.nome %></td>
-                <td><%= emp.livro?.titulo %></td>
-                <td><%= new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') %></td>
-                <td>
-                  <button onclick="devolverEmprestimo('<%= emp.id %>')">Devolver</button>
-                </td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      <% } else { %><p>Nenhum empréstimo ativo no momento.</p><% } %>
-    </section>
+    <!-- Modal de Login -->
+    <div id="loginModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('loginModal')">&times;</span>
+        <h2>Login</h2>
+        <form id="loginForm">
+          <input type="email" id="loginEmail" placeholder="E-mail" required>
+          <input type="password" id="loginPassword" placeholder="Senha" required>
+          <button type="submit">Entrar</button>
+          <p><a href="#" onclick="showPasswordRecovery()">Esqueci minha senha</a></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal de Cadastro -->
+    <div id="registerModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('registerModal')">&times;</span>
+        <h2>Cadastrar Usuário</h2>
+        <form id="registerForm">
+          <input type="text" id="registerName" placeholder="Nome" required>
+          <input type="email" id="registerEmail" placeholder="E-mail" required>
+          <input type="password" id="registerPassword" placeholder="Senha" required>
+          <div class="password-rules">
+            <p>A senha deve conter:</p>
+            <ul>
+              <li>Mínimo 8 caracteres</li>
+              <li>Pelo menos 1 letra maiúscula</li>
+              <li>Pelo menos 1 letra minúscula</li>
+              <li>Pelo menos 1 número</li>
+              <li>Pelo menos 1 símbolo</li>
+            </ul>
+          </div>
+          <input type="text" id="securityQuestion" placeholder="Pergunta de segurança (opcional)">
+          <input type="text" id="securityAnswer" placeholder="Resposta de segurança (opcional)">
+          <button type="submit">Cadastrar</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal de Recuperação de Senha -->
+    <div id="recoveryModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('recoveryModal')">&times;</span>
+        <h2>Recuperar Senha</h2>
+        <div id="recoveryStep1">
+          <p>Informe seu e-mail para receber o código de recuperação:</p>
+          <input type="email" id="recoveryEmail" placeholder="E-mail" required>
+          <button onclick="sendRecoveryCode()">Enviar Código</button>
+        </div>
+        <div id="recoveryStep2" style="display: none;">
+          <p>Insira o código recebido por e-mail e sua nova senha:</p>
+          <input type="text" id="recoveryCode" placeholder="Código de recuperação" required>
+          <input type="password" id="newPassword" placeholder="Nova senha" required>
+          <button onclick="resetPassword()">Redefinir Senha</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Gerenciamento de Usuários (Admin) -->
+    <div id="userManagementModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('userManagementModal')">&times;</span>
+        <h2>Gerenciar Usuários</h2>
+        <input type="text" id="userFilter" placeholder="Filtrar usuários..." style="width: 100%; margin-bottom: 15px;">
+        <div style="max-height: 400px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>E-mail</th><th>Nível</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <!-- Users will be loaded via JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Restauração de Backup (Admin) -->
+    <div id="restoreModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('restoreModal')">&times;</span>
+        <h2>Restaurar Backup</h2>
+        <input type="file" id="backupFile" accept=".json">
+        <button onclick="restoreDatabase()">Restaurar</button>
+        <div id="restoreStatus" style="margin-top: 15px;"></div>
+      </div>
+    </div>
 
     <!-- Modal de Edição de Livro -->
     <div id="editLivroModal" class="modal">
@@ -154,13 +288,38 @@
           <input type="text" id="editNome" placeholder="Nome" required>
           <input type="email" id="editEmail" placeholder="E-mail" required>
           <input type="text" id="editMatricula" placeholder="Matrícula" required>
+          <select id="editStatus">
+            <option value="ATIVO">Ativo</option>
+            <option value="INATIVO">Inativo</option>
+          </select>
           <button type="submit">Salvar Alterações</button>
         </form>
       </div>
     </div>
 
     <script>
-      // Controle de Modais
+      // Utility functions
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function showNotification(message, type = 'success') {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          notification.classList.add('fade-out');
+          setTimeout(() => notification.remove(), 500);
+        }, 3000);
+      }
+
       function showModal(modalId) {
         document.getElementById(modalId).style.display = 'block';
       }
@@ -169,11 +328,363 @@
         document.getElementById(modalId).style.display = 'none';
       }
 
-      // Fechar modais ao clicar fora
-      window.onclick = function(event) {
-        if (event.target.className === 'modal') {
-          event.target.style.display = 'none';
+      function showError(message) {
+        showNotification(message, 'error');
+      }
+
+      function showSuccess(message) {
+        showNotification(message);
+      }
+
+      // Auth functions
+      async function fetchWithAuth(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        if (response.status === 401) {
+          try {
+            const refreshResponse = await fetch('/usuarios/refresh-token', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                refreshToken: localStorage.getItem('refreshToken')
+              })
+            });
+
+            if (refreshResponse.ok) {
+              const { token, refreshToken } = await refreshResponse.json();
+              localStorage.setItem('token', token);
+              localStorage.setItem('refreshToken', refreshToken);
+              return fetch(url, options); // Retry original request
+            }
+          } catch (error) {
+            logout();
+            throw error;
+          }
         }
+
+        return response;
+      }
+
+      async function checkAuthStatus() {
+        try {
+          const response = await fetchWithAuth('/usuarios/perfil');
+          
+          if (!response.ok) {
+            logout();
+          }
+        } catch (error) {
+          console.error('Error checking auth status:', error);
+        }
+      }
+
+      async function logout() {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refreshToken');
+        window.location.href = '/';
+      }
+
+      // Login function
+      document.getElementById('loginForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        
+        try {
+          const response = await fetch('/usuarios/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, senha: password })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao fazer login');
+          }
+
+          const data = await response.json();
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('refreshToken', data.refresh);
+          
+          window.location.href = '/';
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+
+      // Registration function
+      document.getElementById('registerForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const nome = document.getElementById('registerName').value;
+        const email = document.getElementById('registerEmail').value;
+        const senha = document.getElementById('registerPassword').value;
+        const perguntaSeguranca = document.getElementById('securityQuestion').value;
+        const respostaSeguranca = document.getElementById('securityAnswer').value;
+        
+        try {
+          const response = await fetch('/usuarios', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              nome, 
+              email, 
+              senha,
+              perguntaSeguranca,
+              respostaSeguranca
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao cadastrar usuário');
+          }
+
+          hideModal('registerModal');
+          showSuccess('Usuário cadastrado com sucesso! Verifique seu e-mail para ativar a conta.');
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+
+      // Password recovery functions
+      function showPasswordRecovery() {
+        hideModal('loginModal');
+        showModal('recoveryModal');
+        document.getElementById('recoveryStep1').style.display = 'block';
+        document.getElementById('recoveryStep2').style.display = 'none';
+      }
+
+      async function sendRecoveryCode() {
+        const email = document.getElementById('recoveryEmail').value;
+        
+        try {
+          const response = await fetch('/usuarios/recuperar-senha', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao enviar código de recuperação');
+          }
+
+          document.getElementById('recoveryStep1').style.display = 'none';
+          document.getElementById('recoveryStep2').style.display = 'block';
+          showSuccess('Código enviado para seu e-mail!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function resetPassword() {
+        const email = document.getElementById('recoveryEmail').value;
+        const codigo = document.getElementById('recoveryCode').value;
+        const novaSenha = document.getElementById('newPassword').value;
+        
+        try {
+          const response = await fetch('/usuarios/redefinir-senha', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, codigo, novaSenha })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao redefinir senha');
+          }
+
+          hideModal('recoveryModal');
+          showSuccess('Senha redefinida com sucesso! Faça login com sua nova senha.');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      // User management functions (admin only)
+      async function loadUsersForManagement() {
+        try {
+          const response = await fetchWithAuth('/usuarios');
+          if (!response.ok) throw new Error('Erro ao carregar usuários');
+
+          const data = await response.json();
+          const tableBody = document.getElementById('usersTableBody');
+          tableBody.innerHTML = '';
+
+          data.data.forEach(user => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${escapeHtml(user.nome)}</td>
+              <td>${escapeHtml(user.email)}</td>
+              <td>
+                <select id="level-${user.id}" onchange="updateUserLevel(${user.id})">
+                  <option value="1" ${user.nivelAcesso === 1 ? 'selected' : ''}>Usuário</option>
+                  <option value="2" ${user.nivelAcesso === 2 ? 'selected' : ''}>Moderador</option>
+                  <option value="3" ${user.nivelAcesso === 3 ? 'selected' : ''}>Admin</option>
+                </select>
+              </td>
+              <td>${user.status} ${user.bloqueado ? '(Bloqueado)' : ''}</td>
+              <td>
+                <button onclick="toggleUserBlock(${user.id}, ${user.bloqueado})">
+                  ${user.bloqueado ? 'Desbloquear' : 'Bloquear'}
+                </button>
+                <button onclick="deleteUser(${user.id})">Excluir</button>
+              </td>
+            `;
+            tableBody.appendChild(row);
+          });
+
+          // Setup filter
+          document.getElementById('userFilter').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('#usersTableBody tr').forEach(row => {
+              const text = row.textContent.toLowerCase();
+              row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+          });
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function updateUserLevel(userId) {
+        const newLevel = document.getElementById(`level-${userId}`).value;
+        
+        try {
+          const response = await fetchWithAuth(`/usuarios/${userId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ nivelAcesso: parseInt(newLevel) })
+          });
+
+          if (!response.ok) throw new Error('Erro ao atualizar nível de acesso');
+          showSuccess('Nível de acesso atualizado com sucesso!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function toggleUserBlock(userId, isBlocked) {
+        try {
+          const response = await fetchWithAuth(`/usuarios/${userId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ bloqueado: !isBlocked })
+          });
+
+          if (!response.ok) throw new Error('Erro ao atualizar status do usuário');
+          loadUsersForManagement();
+          showSuccess(`Usuário ${isBlocked ? 'desbloqueado' : 'bloqueado'} com sucesso!`);
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function deleteUser(userId) {
+        if (confirm('Tem certeza que deseja excluir este usuário?')) {
+          try {
+            const response = await fetchWithAuth(`/usuarios/${userId}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Erro ao excluir usuário');
+            loadUsersForManagement();
+            showSuccess('Usuário excluído com sucesso!');
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      }
+
+      // Backup and restore functions
+      async function backupDatabase() {
+        try {
+          const response = await fetchWithAuth('/backup', {
+            method: 'POST'
+          });
+
+          if (!response.ok) throw new Error('Erro ao criar backup');
+
+          const data = await response.json();
+          const link = document.createElement('a');
+          link.href = data.file;
+          link.download = `backup-${new Date().toISOString()}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          showSuccess('Backup criado com sucesso!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function restoreDatabase() {
+        const fileInput = document.getElementById('backupFile');
+        if (!fileInput.files.length) {
+          showError('Selecione um arquivo de backup primeiro');
+          return;
+        }
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async function(e) {
+          try {
+            const backupData = e.target.result;
+            const response = await fetchWithAuth('/restore', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ backupData: JSON.parse(backupData) })
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Erro ao restaurar backup');
+            }
+
+            const result = await response.json();
+            document.getElementById('restoreStatus').innerHTML = `
+              <p>Backup restaurado com sucesso!</p>
+              <p>Itens restaurados:</p>
+              <ul>
+                <li>Alunos: ${result.restoredItems.alunos}</li>
+                <li>Livros: ${result.restoredItems.livros}</li>
+                <li>Empréstimos: ${result.restoredItems.emprestimos}</li>
+                <li>Usuários: ${result.restoredItems.usuarios}</li>
+                <li>Logs: ${result.restoredItems.logs}</li>
+              </ul>
+            `;
+            
+            setTimeout(() => window.location.reload(), 3000);
+          } catch (error) {
+            showError(error.message);
+          }
+        };
+
+        reader.onerror = () => showError('Erro ao ler o arquivo');
+        reader.readAsText(file);
       }
 
       // Formulário de Aluno (AJAX)
@@ -190,7 +701,10 @@
             body: JSON.stringify({
               nome: form.nome.value,
               email: form.email.value,
-              matricula: form.matricula.value
+              matricula: form.matricula.value,
+              senha: form.senha.value,
+              perguntaSeguranca: form.perguntaSeguranca.value,
+              respostaSeguranca: form.respostaSeguranca.value
             })
           });
 
@@ -201,7 +715,7 @@
 
           window.location.href = '/?success=Aluno cadastrado com sucesso';
         } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          showError(error.message);
         }
       });
 
@@ -215,6 +729,7 @@
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
             body: JSON.stringify({
               titulo: form.titulo.value,
@@ -230,7 +745,7 @@
 
           window.location.href = '/?success=Livro cadastrado com sucesso';
         } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          showError(error.message);
         }
       });
 
@@ -249,6 +764,7 @@
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
             },
             body: JSON.stringify({
               alunoId: parseInt(form.alunoId.value),
@@ -264,7 +780,7 @@
 
           window.location.href = '/?success=Empréstimo registrado com sucesso';
         } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          showError(error.message);
         }
       });
 
@@ -281,7 +797,7 @@
         e.preventDefault();
         
         try {
-          const response = await fetch(`/livros/${document.getElementById('editLivroId').value}`, {
+          const response = await fetchWithAuth(`/livros/${document.getElementById('editLivroId').value}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -300,16 +816,17 @@
 
           window.location.href = '/?success=Livro atualizado com sucesso';
         } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          showError(error.message);
         }
       });
 
       // Edição de Aluno
-      function openEditAlunoModal(id, nome, email, matricula) {
+      function openEditAlunoModal(id, nome, email, matricula, status) {
         document.getElementById('editAlunoId').value = id;
         document.getElementById('editNome').value = nome;
         document.getElementById('editEmail').value = email;
         document.getElementById('editMatricula').value = matricula;
+        document.getElementById('editStatus').value = status;
         showModal('editAlunoModal');
       }
 
@@ -317,7 +834,7 @@
         e.preventDefault();
         
         try {
-          const response = await fetch(`/alunos/${document.getElementById('editAlunoId').value}`, {
+          const response = await fetchWithAuth(`/alunos/${document.getElementById('editAlunoId').value}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -325,7 +842,8 @@
             body: JSON.stringify({
               nome: document.getElementById('editNome').value,
               email: document.getElementById('editEmail').value,
-              matricula: document.getElementById('editMatricula').value
+              matricula: document.getElementById('editMatricula').value,
+              status: document.getElementById('editStatus').value
             })
           });
 
@@ -336,7 +854,7 @@
 
           window.location.href = '/?success=Aluno atualizado com sucesso';
         } catch (error) {
-          window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+          showError(error.message);
         }
       });
 
@@ -344,7 +862,7 @@
       async function deleteLivro(id) {
         if (confirm('Tem certeza que deseja excluir este livro?')) {
           try {
-            const response = await fetch(`/livros/${id}`, {
+            const response = await fetchWithAuth(`/livros/${id}`, {
               method: 'DELETE'
             });
 
@@ -355,7 +873,7 @@
 
             window.location.href = '/?success=Livro excluído com sucesso';
           } catch (error) {
-            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+            showError(error.message);
           }
         }
       }
@@ -363,7 +881,7 @@
       async function deleteAluno(id) {
         if (confirm('Tem certeza que deseja excluir este aluno?')) {
           try {
-            const response = await fetch(`/alunos/${id}`, {
+            const response = await fetchWithAuth(`/alunos/${id}`, {
               method: 'DELETE'
             });
 
@@ -374,34 +892,26 @@
 
             window.location.href = '/?success=Aluno excluído com sucesso';
           } catch (error) {
-            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+            showError(error.message);
           }
         }
       }
 
       async function enviarEmailAluno(id, email) {
-       if (confirm(`Deseja enviar um e-mail para ${email}?`)) {
-           try {
-            const response = await fetch(`/alunos/${id}/email`, { method: 'POST' });
-            const contentType = response.headers.get('content-type');
+        if (confirm(`Deseja enviar um e-mail para ${email}?`)) {
+          try {
+            const response = await fetchWithAuth(`/api/alunos/${id}/email`, { 
+              method: 'POST'
+            });
 
-        if (!response.ok) {
-            const error = contentType?.includes('application/json') 
-             ? await response.json() 
-             : await response.text();
-            throw new Error(error.message || error);
-      }
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Erro ao enviar e-mail');
+            }
 
-        if (contentType?.includes('application/json')) {
-            const data = await response.json();
-            console.log(data);
-      } else {
-            console.warn('Resposta não é JSON:', await response.text());
-      }
-
-           window.location.href = '/?success=E-mail enviado com sucesso';
+            showSuccess('E-mail enviado com sucesso');
           } catch (error) {
-           window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+            showError(error.message);
           }
         }
       }
@@ -410,7 +920,7 @@
       async function devolverEmprestimo(id) {
         if (confirm('Confirmar devolução deste livro?')) {
           try {
-            const response = await fetch(`/emprestimos/${id}/devolver`, {
+            const response = await fetchWithAuth(`/emprestimos/${id}/devolver`, {
               method: 'POST'
             });
 
@@ -421,10 +931,27 @@
 
             window.location.href = '/?success=Devolução registrada com sucesso';
           } catch (error) {
-            window.location.href = `/?error=${encodeURIComponent(error.message)}`;
+            showError(error.message);
           }
         }
       }
+
+      // Initialize on load
+      document.addEventListener('DOMContentLoaded', () => {
+        checkAuthStatus();
+        
+        // If user is admin, load users for management
+        if (typeof user !== 'undefined' && user && user.nivelAcesso >= 3) {
+          loadUsersForManagement();
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+          if (event.target.className === 'modal') {
+            event.target.style.display = 'none';
+          }
+        }
+      });
     </script>
   </div>
 </body>

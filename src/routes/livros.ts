@@ -10,9 +10,9 @@ const router = Router();
 router.use(authenticateJWT);
 
 const livroSchema = z.object({
-  titulo: z.string().min(3),
-  autor: z.string().min(3),
-  quantidade: z.number().int().positive()
+  titulo: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
+  autor: z.string().min(3, "Autor deve ter pelo menos 3 caracteres"),
+  quantidade: z.number().int().positive("Quantidade deve ser um número inteiro positivo")
 });
 
 // GET todos os livros (não deletados)
@@ -22,8 +22,25 @@ router.get("/", async (req: Request, res: Response) => {
       where: { deleted: false },
       orderBy: { titulo: 'asc' }
     });
+    
+    // Registrar log de acesso
+    await prisma.log.create({
+      data: {
+        acao: 'LISTAGEM_LIVROS',
+        detalhes: `Listagem de livros acessada por ${req.user?.email}`,
+        usuarioId: req.user?.id
+      }
+    });
+
     res.json({ success: true, livros });
   } catch (error) {
+    await prisma.log.create({
+      data: {
+        acao: 'ERRO_LISTAGEM_LIVROS',
+        detalhes: `Erro ao listar livros: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+        usuarioId: req.user?.id
+      }
+    });
     res.status(500).json({ error: 'Erro ao buscar livros' });
   }
 });
@@ -44,8 +61,24 @@ router.post("/", checkPermission(2), async (req: Request, res: Response) => {
       data: validation.data
     });
 
+    // Registrar log de criação
+    await prisma.log.create({
+      data: {
+        acao: 'CRIACAO_LIVRO',
+        detalhes: `Livro criado: ${livro.titulo} (ID: ${livro.id})`,
+        usuarioId: req.user?.id
+      }
+    });
+
     res.status(201).json({ success: true, livro });
   } catch (error) {
+    await prisma.log.create({
+      data: {
+        acao: 'ERRO_CRIACAO_LIVRO',
+        detalhes: `Erro ao criar livro: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+        usuarioId: req.user?.id
+      }
+    });
     res.status(500).json({ error: 'Erro ao criar livro' });
   }
 });
@@ -61,25 +94,41 @@ router.delete("/:id", checkPermission(3), async (req: Request, res: Response) =>
       }
     });
 
+    // Registrar log de exclusão
+    await prisma.log.create({
+      data: {
+        acao: 'EXCLUSAO_LIVRO',
+        detalhes: `Livro marcado como excluído: ${livro.titulo} (ID: ${livro.id})`,
+        usuarioId: req.user?.id
+      }
+    });
+
     res.json({ 
       success: true, 
       message: 'Livro marcado como excluído com sucesso' 
     });
   } catch (error) {
+    await prisma.log.create({
+      data: {
+        acao: 'ERRO_EXCLUSAO_LIVRO',
+        detalhes: `Erro ao excluir livro ID ${req.params.id}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+        usuarioId: req.user?.id
+      }
+    });
     res.status(500).json({ error: 'Erro ao excluir livro' });
   }
 });
 
 // PUT atualizar livro completo
-router.put("/:id", async (req: Request<{ id: string }, {}, LivroRequestBody>, res: Response) => {
+router.put("/:id", checkPermission(2), async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id) || id <= 0) {
     return res.status(400).json({ success: false, error: "ID inválido" });
   }
 
   try {
-    const quantidade = parseQuantidade(req.body.quantidade);
-    if (quantidade === null) {
+    const quantidade = Number(req.body.quantidade);
+    if (isNaN(quantidade) || quantidade <= 0) {
       return res.status(400).json({ 
         success: false,
         error: "Quantidade inválida: deve ser um número inteiro positivo"
@@ -100,7 +149,6 @@ router.put("/:id", async (req: Request<{ id: string }, {}, LivroRequestBody>, re
       });
     }
 
-    // Verifica se o livro existe antes de atualizar
     const existeLivro = await prisma.livro.findUnique({ where: { id } });
     if (!existeLivro) {
       return res.status(404).json({ success: false, error: "Livro não encontrado" });
@@ -111,9 +159,25 @@ router.put("/:id", async (req: Request<{ id: string }, {}, LivroRequestBody>, re
       data: valida.data
     });
 
+    // Registrar log de atualização
+    await prisma.log.create({
+      data: {
+        acao: 'ATUALIZACAO_LIVRO',
+        detalhes: `Livro atualizado: ${livro.titulo} (ID: ${livro.id})`,
+        usuarioId: req.user?.id
+      }
+    });
+
     return res.status(200).json({ success: true, livro });
   } catch (error) {
-    console.error("Erro ao atualizar livro:", error);
+    await prisma.log.create({
+      data: {
+        acao: 'ERRO_ATUALIZACAO_LIVRO',
+        detalhes: `Erro ao atualizar livro ID ${req.params.id}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+        usuarioId: req.user?.id
+      }
+    });
+    
     return res.status(500).json({
       success: false,
       error: "Erro ao atualizar livro",
