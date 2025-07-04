@@ -12,7 +12,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.usuariosRouter = exports.authenticateToken = void 0;
+exports.usuariosRouter = void 0;
+exports.authenticateToken = authenticateToken;
 const client_1 = require("@prisma/client");
 const express_1 = require("express");
 const zod_1 = require("zod");
@@ -47,7 +48,7 @@ const usuarioSchema = zod_1.z.object({
         .regex(/[^A-Za-z0-9]/, "Senha deve conter pelo menos um símbolo")
 });
 // Middleware de autenticação
-const authenticateToken = (req, res, next) => {
+function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) {
@@ -60,8 +61,7 @@ const authenticateToken = (req, res, next) => {
         req.user = user;
         next();
     });
-};
-exports.authenticateToken = authenticateToken;
+}
 // POST criar usuário
 router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const valida = usuarioSchema.safeParse(req.body);
@@ -302,7 +302,7 @@ router.post("/redefinir-senha", (req, res) => __awaiter(void 0, void 0, void 0, 
     }
 }));
 // GET logs (protegido, apenas admin)
-router.get("/logs", exports.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+router.get("/logs", authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     if (req.user.nivel < 3) {
         return res.status(403).json({ error: 'Acesso negado. Nível de acesso insuficiente.' });
     }
