@@ -9,6 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// src/routes/livros.ts
 const client_1 = require("@prisma/client");
 const express_1 = require("express");
 const zod_1 = require("zod");
@@ -23,7 +24,7 @@ const livroSchema = zod_1.z.object({
 });
 // GET todos os livros (não deletados)
 router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f;
     try {
         const livros = yield prisma.livro.findMany({
             where: { deleted: false },
@@ -33,8 +34,9 @@ router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         yield prisma.log.create({
             data: {
                 acao: 'LISTAGEM_LIVROS',
-                detalhes: `Listagem de livros acessada por ${(_a = req.user) === null || _a === void 0 ? void 0 : _a.email}`,
-                usuarioId: (_b = req.user) === null || _b === void 0 ? void 0 : _b.id
+                detalhes: `Listagem de livros acessada por ${((_a = req.user) === null || _a === void 0 ? void 0 : _a.email) || ((_b = req.aluno) === null || _b === void 0 ? void 0 : _b.email)}`,
+                usuarioId: (_c = req.user) === null || _c === void 0 ? void 0 : _c.id,
+                alunoId: (_d = req.aluno) === null || _d === void 0 ? void 0 : _d.id
             }
         });
         res.json({ success: true, livros });
@@ -44,7 +46,8 @@ router.get("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             data: {
                 acao: 'ERRO_LISTAGEM_LIVROS',
                 detalhes: `Erro ao listar livros: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
-                usuarioId: (_c = req.user) === null || _c === void 0 ? void 0 : _c.id
+                usuarioId: (_e = req.user) === null || _e === void 0 ? void 0 : _e.id,
+                alunoId: (_f = req.aluno) === null || _f === void 0 ? void 0 : _f.id
             }
         });
         res.status(500).json({ error: 'Erro ao buscar livros' });

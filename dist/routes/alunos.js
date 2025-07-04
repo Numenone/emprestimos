@@ -34,17 +34,16 @@ const transporter = nodemailer_1.default.createTransport({
     }
 });
 const alunoSchema = zod_1.z.object({
-    nome: zod_1.z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
-    email: zod_1.z.string().email("Email inválido"),
-    matricula: zod_1.z.string().min(5, "Matrícula deve ter pelo menos 5 caracteres"),
-    senha: zod_1.z.string()
-        .min(8, "Senha deve ter pelo menos 8 caracteres")
-        .regex(/[A-Z]/, "Senha deve conter pelo menos uma letra maiúscula")
-        .regex(/[a-z]/, "Senha deve conter pelo menos uma letra minúscula")
-        .regex(/[0-9]/, "Senha deve conter pelo menos um número")
-        .regex(/[^A-Za-z0-9]/, "Senha deve conter pelo menos um símbolo"),
-    perguntaSeguranca: zod_1.z.string().min(5, "Pergunta de segurança deve ter pelo menos 5 caracteres").optional(),
-    respostaSeguranca: zod_1.z.string().min(2, "Resposta de segurança deve ter pelo menos 2 caracteres").optional()
+    nome: zod_1.z.string().min(3),
+    email: zod_1.z.string().email(),
+    matricula: zod_1.z.string().min(5),
+    senha: zod_1.z.string().min(8)
+        .regex(/[A-Z]/)
+        .regex(/[a-z]/)
+        .regex(/[0-9]/)
+        .regex(/[^A-Za-z0-9]/),
+    perguntaSeguranca: zod_1.z.string().min(5).optional(),
+    respostaSeguranca: zod_1.z.string().min(2).optional()
 });
 // Rotas públicas
 router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -68,7 +67,9 @@ router.post("/", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 codigoAtivacao,
                 status: "INATIVO",
                 perguntaSeguranca,
-                respostaSeguranca: respostaSeguranca ? yield bcrypt_1.default.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS) : null
+                respostaSeguranca: respostaSeguranca
+                    ? yield bcrypt_1.default.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS)
+                    : null
             }
         });
         // Enviar email de ativação
@@ -568,39 +569,41 @@ router.delete("/:id", jwt_1.authenticateJWT, (0, jwt_1.checkPermission)(3), (req
     }
 }));
 // Função auxiliar para gerar HTML do email
-// function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
-//   return `
-//     <div style="font-family: Arial, sans-serif; padding: 20px;">
-//       <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
-//       <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
-//       <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-//         <thead>
-//           <tr style="background-color: #f8f9fa;">
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
-//           </tr>
-//         </thead>
-//         <tbody>
-//           ${aluno.emprestimos.map((emp: EmprestimoComLivro) => {
-//             const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
-//             return `
-//               <tr>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">
-//                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
-//                 </td>
-//               </tr>
-//             `;
-//           }).join('')}
-//         </tbody>
-//       </table>
-//     </div>
-//   `;
-// }
+function generateEmailHtml(aluno) {
+    return `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
+      <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
+      
+      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+          <tr style="background-color: #f8f9fa;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${aluno.emprestimos.map((emp) => {
+        var _a;
+        const livro = (_a = emp.livro) !== null && _a !== void 0 ? _a : { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
+        return `
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                  ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
+                </td>
+              </tr>
+            `;
+    }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 // Encerramento correto do Prisma
 process.on('SIGTERM', () => __awaiter(void 0, void 0, void 0, function* () {
     yield prisma.$disconnect();

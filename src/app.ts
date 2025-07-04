@@ -1,5 +1,4 @@
 import express from 'express';
-import bodyParser from 'body-parser';
 import cors from 'cors';
 import path from 'path';
 import { PrismaClient } from '@prisma/client';
@@ -14,48 +13,47 @@ import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import { Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './types/express';
-
+import cookieParser from 'cookie-parser';
 const prisma = new PrismaClient();
 const app = express();
-app.use(bodyParser.json());
+app.use(cookieParser());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-// Enhanced security middleware
+
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "trusted-cdn.com"],
+      connectSrc: [
+        "'self'",
+        "http://localhost:3000", // Backend local
+        "http://localhost:3001", // Frontend local
+        "https://emprestimos-nlq1.onrender.com" // Backend em produção
+      ],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", process.env.FRONTEND_URL || 'http://localhost:3001'],
-      frameAncestors: ["'none'"],
-      formAction: ["'self'"]
+      fontSrc: ["'self'"]
     }
-  },
-  hsts: {
-    maxAge: 63072000,
-    includeSubDomains: true,
-    preload: true
-  },
-  referrerPolicy: { policy: 'same-origin' }
+  }
 }));
 
-// CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  origin: 'http://localhost:3001',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
-  maxAge: 86400
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
-// Request logging
 app.use(morgan('combined'));
 
-// Rate limiting - more strict for auth endpoints
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
@@ -63,8 +61,8 @@ const apiLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 999,
   message: 'Too many authentication attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false
@@ -74,11 +72,7 @@ app.use(apiLimiter);
 app.use('/usuarios/login', authLimiter);
 app.use('/alunos/login', authLimiter);
 
-// Body parsing with size limits
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Static files with cache control
 const publicPath = path.join(__dirname, '../public');
 app.use(express.static(publicPath, {
   maxAge: '1d',
@@ -89,15 +83,12 @@ app.use(express.static(publicPath, {
   }
 }));
 
-// Public routes
 app.use('/alunos', alunosRouter);
 app.use('/usuarios', usuariosRouter);
-
-// Protected routes with JWT authentication
+app.use(authenticateJWT);
 app.use('/livros', authenticateJWT, livrosRouter);
 app.use('/emprestimos', authenticateJWT, emprestimosRouter);
 
-// Status route
 app.get('/status', (_req, res) => {
   res.json({ 
     status: 'online',
@@ -105,17 +96,14 @@ app.get('/status', (_req, res) => {
     environment: process.env.NODE_ENV || 'development',
     security: {
       cors: true,
-      helmet: true,
       rateLimiting: true,
       jwtAuth: true
     }
   });
 });
 
-// Backup route with admin permission check
 app.post('/backup', authenticateJWT, async (req: AuthenticatedRequest, res) => {
   try {
-    // Check if user has admin privileges
     const user = req.user || req.aluno;
     if (!user || user.nivelAcesso < 3) {
       return res.status(403).json({ 
@@ -139,14 +127,21 @@ app.post('/backup', authenticateJWT, async (req: AuthenticatedRequest, res) => {
 
     fs.writeFileSync(backupFile, JSON.stringify(backupData, null, 2));
 
-    // Log the backup action
+    const logData: {
+      acao: string;
+      detalhes: string;
+      usuarioId?: number;
+      alunoId?: number;
+    } = {
+      acao: 'BACKUP_SISTEMA',
+      detalhes: `Backup realizado por ${user.email}`
+    };
+
+    if ('nivelAcesso' in user) {
+    logData.usuarioId = user.id;
+    }
     await prisma.log.create({
-      data: {
-        acao: 'BACKUP_SISTEMA',
-        detalhes: `Backup realizado por ${user.email}`,
-        usuarioId: user.id,
-        alunoId: user.id
-      }
+    data: logData
     });
 
     res.json({ 
@@ -160,10 +155,8 @@ app.post('/backup', authenticateJWT, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Restore route with admin permission check
 app.post('/restore', authenticateJWT, async (req: AuthenticatedRequest, res) => {
   try {
-    // Check if user has admin privileges
     const user = req.user || req.aluno;
     if (!user || user.nivelAcesso < 3) {
       return res.status(403).json({ 
@@ -178,7 +171,6 @@ app.post('/restore', authenticateJWT, async (req: AuthenticatedRequest, res) => 
 
     const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
 
-    // Start transaction for data restoration
     await prisma.$transaction([
       prisma.aluno.deleteMany(),
       prisma.livro.deleteMany(),
@@ -187,14 +179,12 @@ app.post('/restore', authenticateJWT, async (req: AuthenticatedRequest, res) => 
       prisma.log.deleteMany()
     ]);
 
-    // Restore data
     await prisma.aluno.createMany({ data: backupData.alunos });
     await prisma.livro.createMany({ data: backupData.livros });
     await prisma.emprestimo.createMany({ data: backupData.emprestimos });
     await prisma.usuario.createMany({ data: backupData.usuarios });
     await prisma.log.createMany({ data: backupData.logs });
 
-    // Log the restore action
     await prisma.log.create({
       data: {
         acao: 'RESTORE_SISTEMA',
@@ -221,11 +211,9 @@ app.post('/restore', authenticateJWT, async (req: AuthenticatedRequest, res) => 
   }
 });
 
-// Enhanced error handling
 app.use((err: Error, req: any, res: Response, _next: NextFunction) => {
   console.error(err.stack);
 
-  // Log the error
   prisma.log.create({
     data: {
       acao: 'ERRO_SERVIDOR',
@@ -235,7 +223,6 @@ app.use((err: Error, req: any, res: Response, _next: NextFunction) => {
     }
   }).catch((logError: unknown) => console.error('Failed to log error:', logError));
 
-  // Security headers for error responses
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
 
@@ -245,7 +232,6 @@ app.use((err: Error, req: any, res: Response, _next: NextFunction) => {
   });
 });
 
-// Security headers middleware
 app.use((_req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -254,7 +240,6 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Server startup with enhanced security
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
@@ -265,7 +250,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('- Autenticação JWT obrigatória para rotas protegidas');
 });
 
-// Graceful shutdown with cleanup
 const shutdown = async () => {
   console.log('Encerrando servidor...');
   try {

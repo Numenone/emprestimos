@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Sistema de Biblioteca</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    :root {
+      --primary-color: #3498db;
+      --secondary-color: #2980b9;
+      --success-color: #2ecc71;
+      --danger-color: #e74c3c;
+      --light-color: #ecf0f1;
+      --dark-color: #2c3e50;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f7fa;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    header {
+      background-color: var(--primary-color);
+      color: white;
+      padding: 20px 0;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .auth-buttons {
+      display: flex;
+      gap: 10px;
+    }
+    
+    button {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      background-color: var(--secondary-color);
+    }
+    
+    .btn-success {
+      background-color: var(--success-color);
+    }
+    
+    .btn-danger {
+      background-color: var(--danger-color);
+    }
+    
+    section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    th {
+      background-color: var(--light-color);
+      font-weight: 600;
+    }
+    
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+    
+    form {
+      margin-top: 20px;
+    }
+    
+    input, select {
+      padding: 10px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100%;
+      max-width: 400px;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    .alert {
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+    
+    .alert-success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .alert-danger {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000; /* Valor alto para garantir que fique acima de tudo */
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.4);
+    }
+
+    .modal-content {
+      background-color: white;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 8px;
+      width: 80%;
+      max-width: 500px;
+      position: relative;
+    }
+    
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    
+    .close:hover {
+      color: black;
+    }
+    
+    @media (max-width: 768px) {
+      .header-content {
+        flex-direction: column;
+        text-align: center;
+      }
+      
+      .auth-buttons {
+        margin-top: 15px;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <h1>Biblioteca Digital</h1>
+      <div class="auth-buttons">
+        <% if (user) { %>
+          <span style="color: white; margin-right: 15px;">Bem-vindo, <%= user.nome %></span>
+          <button onclick="logout()">Sair</button>
+        <% } else { %>
+          <button onclick="showModal('loginModal')">Login</button>
+          <button class="btn-success" onclick="showModal('registerModal')">Cadastrar</button>
+        <% } %>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+
+    <% if (error) { %>
+      <div class="alert alert-danger"><%= error %></div>
+    <% } %>
+
+    <% if (user && typeof user.nivelAcesso !== 'undefined') { %>
+      <% if (user.nivelAcesso >= 3) { %>
+        <section>
+          <h2>Administração</h2>
+          <div class="admin-actions">
+            <button onclick="showModal('userManagementModal')">Gerenciar Usuários</button>
+            <button onclick="backupDatabase()">Fazer Backup</button>
+            <button onclick="showModal('restoreModal')">Restaurar Backup</button>
+          </div>
+        </section>
+
+        <% if (usuarios && usuarios.length) { %>
+          <section>
+            <h2>Lista de Usuários</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>E-mail</th>
+                  <th>Nível</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% usuarios.forEach(function(usuario) { %>
+                  <% if (usuario && usuario.id) { %>
+                    <tr>
+                      <td><%= usuario.nome %></td>
+                      <td><%= usuario.email %></td>
+                      <td>
+                        <select id="level-<%= usuario.id %>" onchange="updateUserLevel('<%= usuario.id %>')">
+                          <option value="1" <%= usuario.nivelAcesso === 1 ? 'selected' : '' %>>Usuário</option>
+                          <option value="2" <%= usuario.nivelAcesso === 2 ? 'selected' : '' %>>Moderador</option>
+                          <option value="3" <%= usuario.nivelAcesso === 3 ? 'selected' : '' %>>Admin</option>
+                        </select>
+                      </td>
+                      <td>
+                        <%= usuario.status %> <%= usuario.bloqueado ? '(Bloqueado)' : '' %>
+                      </td>
+                      <td>
+                        <button onclick="toggleUserBlock(<%= usuario.id %>, <%= usuario.bloqueado %>)">
+                          <%= usuario.bloqueado ? 'Desbloquear' : 'Bloquear' %>
+                        </button>
+                        <button onclick="deleteUser(<%= usuario.id %>)">Excluir</button>
+                      </td>
+                    </tr>
+                  <% } %>
+                <% }); %>
+              </tbody>
+            </table>
+          </section>
+        <% } else { %>
+          <p>Nenhum usuário encontrado</p>
+        <% } %>
+      <% } %>
+
+      <!-- Seções de Alunos, Livros e Empréstimos -->
+      <% if (alunos && alunos.length) { %>
+        <section>
+          <h2>Alunos</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Matrícula</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% alunos.forEach(function(aluno) { %>
+                <tr>
+                  <td><%= aluno.nome %></td>
+                  <td><%= aluno.email %></td>
+                  <td><%= aluno.matricula %></td>
+                  <td><%= aluno.status %></td>
+                  <td>
+                    <button onclick="enviarEmailAluno(<%= aluno.id %>, '<%= aluno.email %>')">Enviar Email</button>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </section>
+      <% } %>
+
+      <% if (livros && livros.length) { %>
+        <section>
+          <h2>Livros</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Título</th>
+                <th>Autor</th>
+                <th>Quantidade</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% livros.forEach(function(livro) { %>
+                <tr>
+                  <td><%= livro.titulo %></td>
+                  <td><%= livro.autor %></td>
+                  <td><%= livro.quantidade %></td>
+                  <td>
+                    <button onclick="openEditLivroModal(<%= livro.id %>, '<%= livro.titulo %>', '<%= livro.autor %>', <%= livro.quantidade %>)">
+                      Editar
+                    </button>
+                    <button class="btn-danger" onclick="deleteLivro(<%= livro.id %>)">Excluir</button>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </section>
+      <% } %>
+
+      <% if (emprestimos && emprestimos.length) { %>
+        <section>
+          <h2>Empréstimos</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Aluno</th>
+                <th>Livro</th>
+                <th>Data Empréstimo</th>
+                <th>Data Devolução</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% emprestimos.forEach(function(emp) { %>
+                <tr>
+                  <td><%= emp.aluno.nome %></td>
+                  <td><%= emp.livro.titulo %></td>
+                  <td><%= new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR') %></td>
+                  <td><%= emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente' %></td>
+                  <td><%= emp.devolvido ? 'Devolvido' : 'Ativo' %></td>
+                  <td>
+                    <% if (!emp.devolvido) { %>
+                      <button onclick="devolverEmprestimo(<%= emp.id %>)">Devolver</button>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </section>
+      <% } %>
+
+    <% } else { %>
+      <section class="welcome-section">
+        <h2>Bem-vindo ao Sistema de Biblioteca</h2>
+        <p>Faça login ou cadastre-se para acessar todas as funcionalidades do sistema.</p>
+        
+        <div class="features">
+          <div class="feature">
+            <h3>Cadastro de Alunos</h3>
+            <p>Gerencie os alunos da instituição de forma simples e eficiente.</p>
+          </div>
+          
+          <div class="feature">
+            <h3>Controle de Livros</h3>
+            <p>Mantenha o acervo da biblioteca sempre atualizado.</p>
+          </div>
+          
+          <div class="feature">
+            <h3>Empréstimos</h3>
+            <p>Registre e acompanhe todos os empréstimos de livros.</p>
+          </div>
+        </div>
+        
+        <div class="cta">
+          <button class="btn-success" onclick="showModal('registerModal')">Cadastre-se agora</button>
+        </div>
+      </section>
+    <% } %>
+
+    <!-- Modal de Login -->
+    <div id="loginModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('loginModal')">&times;</span>
+        <h2>Login</h2>
+        <form id="loginForm">
+          <input type="email" id="loginEmail" placeholder="E-mail" required>
+          <input type="password" id="loginPassword" placeholder="Senha" required>
+          <button type="submit">Entrar</button>
+          <p><a href="#" onclick="showPasswordRecovery()">Esqueci minha senha</a></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal de Cadastro -->
+    <div id="registerModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('registerModal')">&times;</span>
+        <h2>Cadastrar Usuário</h2>
+        <form id="registerForm">
+          <input type="text" id="nome" placeholder="Nome" required>
+          <input type="email" id="email" placeholder="E-mail" required>
+          <input type="password" id="senha" placeholder="Senha" required>
+          <div class="password-rules">
+            <p>A senha deve conter:</p>
+            <ul>
+              <li>Mínimo 8 caracteres</li>
+              <li>Pelo menos 1 letra maiúscula</li>
+              <li>Pelo menos 1 letra minúscula</li>
+              <li>Pelo menos 1 número</li>
+              <li>Pelo menos 1 símbolo</li>
+            </ul>
+          </div>
+          <input type="text" id="perguntaSeguranca" placeholder="Pergunta de segurança (opcional)">
+          <input type="text" id="respostaSeguranca" placeholder="Resposta de segurança (opcional)">
+          <button type="submit">Cadastrar</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal de Recuperação de Senha -->
+    <div id="recoveryModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('recoveryModal')">&times;</span>
+        <h2>Recuperar Senha</h2>
+        <div id="recoveryStep1">
+          <p>Informe seu e-mail para receber o código de recuperação:</p>
+          <input type="email" id="recoveryEmail" placeholder="E-mail" required>
+          <button onclick="sendRecoveryCode()">Enviar Código</button>
+        </div>
+        <div id="recoveryStep2" style="display: none;">
+          <p>Insira o código recebido por e-mail e sua nova senha:</p>
+          <input type="text" id="recoveryCode" placeholder="Código de recuperação" required>
+          <input type="password" id="newPassword" placeholder="Nova senha" required>
+          <button onclick="resetPassword()">Redefinir Senha</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Gerenciamento de Usuários (Admin) -->
+    <div id="userManagementModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('userManagementModal')">&times;</span>
+        <h2>Gerenciar Usuários</h2>
+        <input type="text" id="userFilter" placeholder="Filtrar usuários..." style="width: 100%; margin-bottom: 15px;">
+        <div style="max-height: 400px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr><th>Nome</th><th>E-mail</th><th>Nível</th><th>Status</th><th>Ações</th></tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <!-- Users will be loaded via JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Restauração de Backup (Admin) -->
+    <div id="restoreModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('restoreModal')">&times;</span>
+        <h2>Restaurar Backup</h2>
+        <input type="file" id="backupFile" accept=".json">
+        <button onclick="restoreDatabase()">Restaurar</button>
+        <div id="restoreStatus" style="margin-top: 15px;"></div>
+      </div>
+    </div>
+
+    <!-- Modal de Edição de Livro -->
+    <div id="editLivroModal" class="modal">
+      <div class="modal-content">
+        <span class="close" onclick="hideModal('editLivroModal')">&times;</span>
+        <h2>Editar Livro</h2>
+        <form id="editLivroForm">
+          <input type="hidden" id="editLivroId">
+          <div class="form-group">
+            <label for="editTitulo">Título:</label>
+            <input type="text" id="editTitulo" required>
+          </div>
+          <div class="form-group">
+            <label for="editAutor">Autor:</label>
+            <input type="text" id="editAutor" required>
+          </div>
+          <div class="form-group">
+            <label for="editQuantidade">Quantidade:</label>
+            <input type="number" id="editQuantidade" min="0" required>
+          </div>
+          <button type="submit">Salvar</button>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Make user available to client-side JS
+      const user = <%= typeof user !== 'undefined' && user ? JSON.stringify(user) : 'null' %>;
+
+      // Utility functions
+      function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') unsafe = String(unsafe ?? '');
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+          // Funções para mostrar/esconder modais
+    function showModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden'; // Desabilitar rolagem do corpo
+      } else {
+        console.error('Modal não encontrado:', modalId);
+      }
+    }
+
+    function hideModal(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto'; // Reabilitar rolagem do corpo
+      }
+    }
+
+    // Fechar modal quando clicar no X
+    document.querySelectorAll('.close').forEach(closeBtn => {
+      closeBtn.addEventListener('click', function() {
+        const modal = this.closest('.modal');
+          hideModal(modal.id);
+      });
+    });
+
+    // Fechar modal quando clicar fora do conteúdo
+    window.addEventListener('click', function(event) {
+      if (event.target.classList.contains('modal')) {
+        hideModal(event.target.id);;
+      }
+    });
+
+    // Event listeners para os botões de login e cadastro
+    document.addEventListener('DOMContentLoaded', function() {
+      // Botão de Login
+      const loginBtn = document.querySelector('button[onclick="showModal(\'loginModal\')"]');
+      if (loginBtn) {
+        loginBtn.onclick = function() {
+          showModal('loginModal');
+        };
+      }
+
+      // Botão de Cadastro
+      const registerBtn = document.querySelector('button[onclick="showModal(\'registerModal\')"]');
+      if (registerBtn) {
+        registerBtn.onclick = function() {
+          showModal('registerModal');
+        };
+      }
+
+            // Formulário de Login
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const email = document.getElementById('loginEmail').value;
+          const password = document.getElementById('loginPassword').value;
+          
+          try {
+            const response = await fetch('http://localhost:3000/usuarios/login', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                
+              },
+              body: JSON.stringify({ email, password }),
+              credentials: 'include'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao fazer login');
+            }
+
+            const data = await response.json();
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('refreshToken', data.refreshToken);
+            
+            hideModal('loginModal');
+            window.location.reload();
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+      }
+
+      // Formulário de Cadastro
+      const registerForm = document.getElementById('registerForm');
+      if (registerForm) {
+        registerForm.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const nome = document.getElementById('nome').value;
+          const email = document.getElementById('email').value;
+          const senha = document.getElementById('senha').value;
+          const perguntaSeguranca = document.getElementById('perguntaSeguranca').value;
+          const respostaSeguranca = document.getElementById('respostaSeguranca').value;
+          
+          try {
+            const response = await fetch('http://localhost:3000/usuarios', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                
+              },
+            body: JSON.stringify(formData),
+            credentials: 'include'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao cadastrar usuário');
+            }
+
+            hideModal('registerModal');
+            alert('Usuário cadastrado com sucesso! Verifique seu e-mail para ativar a conta.');
+          } catch (error) {
+            alert(error.message);
+          }
+          });
+        }
+       });
+
+      function showNotification(message, type = 'success') {
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          notification.classList.add('fade-out');
+          setTimeout(() => notification.remove(), 500);
+        }, 3000);
+      }
+
+      function showModal(modalId) {
+        document.getElementById(modalId).style.display = 'block';
+      }
+
+      function hideModal(modalId) {
+        document.getElementById(modalId).style.display = 'none';
+      }
+
+      function showError(message) {
+        showNotification(message, 'error');
+      }
+
+      function showSuccess(message) {
+        showNotification(message);
+      }
+
+      // Auth functions
+      async function fetchWithAuth(url, options = {}) {
+        const token = localStorage.getItem('token');
+        const response = await fetch(url, {
+           ...options,
+          headers: {
+             ...options.headers,
+             'Content-Type': 'application/json',
+             'Authorization': `Bearer ${token}`
+          },
+          credentials: 'include' // Isso é crucial para enviar cookies
+      });
+        
+        if (response.status === 401) {
+          try {
+             localStorage.removeItem('token');
+             window.location.href = '/login';
+             throw new Error('Não autorizado'); 
+          }
+          catch (error) {
+             console.error('Erro ao redirecionar para login:', error);
+          }
+        } else if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Erro ao acessar recurso');
+        }
+      }
+
+      async function logout() {
+        try {
+          await fetch('/logout', { method: 'POST' });
+          localStorage.removeItem('token');
+          localStorage.removeItem('refreshToken');
+          window.location.href = '/';
+        } catch (error) {
+          console.error('Logout error:', error);
+          window.location.href = '/';
+        }
+      }
+
+      // Login function
+      document.getElementById('loginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+  
+      // Obter valores dos campos
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+
+      // Validação básica
+      if (!email || !password) {
+        alert('Por favor, preencha todos os campos');
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:3000/usuarios/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            email: email,
+            senha: password  // Note que o backend espera "senha" não "password"
+          }),
+          credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          // Mostra o erro retornado pelo servidor
+          throw new Error(data.error || 'Erro desconhecido ao fazer login');
+        }
+
+        // Armazena os tokens
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('refreshToken', data.refreshToken);
+    
+        // Redireciona ou recarrega a página
+        window.location.href = '/dashboard'; // Ou window.location.reload();
+    
+      } catch (error) {
+        console.error('Erro no login:', error);
+        alert('Falha no login: ' + error.message);
+      }
+    });
+
+      // Registration function
+      document.getElementById('registerForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = {
+        nome: document.getElementById('nome').value,
+        email: document.getElementById('email').value,
+        senha: document.getElementById('senha').value,
+        perguntaSeguranca: document.getElementById('perguntaSeguranca').value || undefined,
+        respostaSeguranca: document.getElementById('respostaSeguranca').value || undefined
+        };
+
+        try {
+          const response = await fetch('http://localhost:3000/usuarios/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({ 
+              nome, 
+              email, 
+              senha,
+              perguntaSeguranca: perguntaSeguranca || undefined,
+              respostaSeguranca: respostaSeguranca || undefined,
+              credentials: 'include'
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao cadastrar usuário');
+          }
+
+          const data = await response.json();
+          showSuccess('Usuário cadastrado com sucesso! Verifique seu e-mail para ativar a conta.');
+          hideModal('registerModal');
+        } catch (error) {
+          showError(error.message);
+          alert(error.message || 'Erro ao cadastrar');
+        }
+      });
+
+      // Password recovery functions
+      function showPasswordRecovery() {
+        hideModal('loginModal');
+        showModal('recoveryModal');
+        document.getElementById('recoveryStep1').style.display = 'block';
+        document.getElementById('recoveryStep2').style.display = 'none';
+      }
+
+      async function sendRecoveryCode() {
+        const email = document.getElementById('recoveryEmail').value;
+        
+        try {
+          const response = await fetch('/recuperar-senha', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({ email }),
+            credentials: 'include'
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao enviar código de recuperação');
+          }
+
+          document.getElementById('recoveryStep1').style.display = 'none';
+          document.getElementById('recoveryStep2').style.display = 'block';
+          showSuccess('Código enviado para seu e-mail!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function resetPassword() {
+        const email = document.getElementById('recoveryEmail').value;
+        const codigo = document.getElementById('recoveryCode').value;
+        const novaSenha = document.getElementById('newPassword').value;
+        
+        try {
+          const response = await fetch('/redefinir-senha', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({ email, codigo, novaSenha }),
+            credentials: 'include'
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao redefinir senha');
+          }
+
+          hideModal('recoveryModal');
+          showSuccess('Senha redefinida com sucesso! Faça login com sua nova senha.');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      // User management functions (admin only)
+      async function loadUsersForManagement() {
+        try {
+          const response = await fetchWithAuth('/usuarios');
+          if (!response.ok) throw new Error('Erro ao carregar usuários');
+
+          const data = await response.json();
+          const tableBody = document.getElementById('usersTableBody');
+          tableBody.innerHTML = '';
+
+          data.forEach(user => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${escapeHtml(user.nome)}</td>
+              <td>${escapeHtml(user.email)}</td>
+              <td>
+                <select id="level-${user.id}" onchange="updateUserLevel('${user.id}')">
+                  <option value="1" ${user.nivelAcesso === 1 ? 'selected' : ''}>Usuário</option>
+                  <option value="2" ${user.nivelAcesso === 2 ? 'selected' : ''}>Moderador</option>
+                  <option value="3" ${user.nivelAcesso === 3 ? 'selected' : ''}>Admin</option>
+                </select>
+              </td>
+              <td>${user.status} ${user.bloqueado ? '(Bloqueado)' : ''}</td>
+              <td>
+                <button onclick="toggleUserBlock(${user.id}, ${user.bloqueado})">
+                  ${user.bloqueado ? 'Desbloquear' : 'Bloquear'}
+                </button>
+                <button onclick="deleteUser(${user.id})">Excluir</button>
+              </td>
+            `;
+            tableBody.appendChild(row);
+          });
+
+          // Setup filter
+          document.getElementById('userFilter').addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('#usersTableBody tr').forEach(row => {
+              const text = row.textContent.toLowerCase();
+              row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+          });
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function updateUserLevel(userId) {
+        const newLevel = document.getElementById(`level-${userId}`).value;
+        
+        try {
+          const response = await fetchWithAuth(`/usuarios/${userId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({ nivelAcesso: parseInt(newLevel) }),
+            credentials: 'include'
+          });
+
+          if (!response.ok) throw new Error('Erro ao atualizar nível de acesso');
+          showSuccess('Nível de acesso atualizado com sucesso!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function toggleUserBlock(userId, isBlocked) {
+        try {
+          const response = await fetchWithAuth(`/usuarios/${userId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({ bloqueado: !isBlocked }),
+            credentials: 'include'
+          });
+
+          if (!response.ok) throw new Error('Erro ao atualizar status do usuário');
+          loadUsersForManagement();
+          showSuccess(`Usuário ${isBlocked ? 'desbloqueado' : 'bloqueado'} com sucesso!`);
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function deleteUser(userId) {
+        if (confirm('Tem certeza que deseja excluir este usuário?')) {
+          try {
+            const response = await fetchWithAuth(`/usuarios/${userId}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) throw new Error('Erro ao excluir usuário');
+            loadUsersForManagement();
+            showSuccess('Usuário excluído com sucesso!');
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      }
+
+      // Backup and restore functions
+      async function backupDatabase() {
+        try {
+          const response = await fetchWithAuth('/backup', {
+            method: 'POST'
+          });
+
+          if (!response.ok) throw new Error('Erro ao criar backup');
+
+          const data = await response.json();
+          const link = document.createElement('a');
+          link.href = data.file;
+          link.download = `backup-${new Date().toISOString()}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          showSuccess('Backup criado com sucesso!');
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function restoreDatabase() {
+        const fileInput = document.getElementById('backupFile');
+        if (!fileInput.files.length) {
+          showError('Selecione um arquivo de backup primeiro');
+          return;
+        }
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async function(e) {
+          try {
+            const backupData = e.target.result;
+            const response = await fetchWithAuth('/restore', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                
+              },
+              body: JSON.stringify({ backupData: JSON.parse(backupData) })
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Erro ao restaurar backup');
+            }
+
+            const result = await response.json();
+            document.getElementById('restoreStatus').innerHTML = `
+              <p>Backup restaurado com sucesso!</p>
+              <p>Itens restaurados:</p>
+              <ul>
+                <li>Alunos: ${result.restored.alunos}</li>
+                <li>Livros: ${result.restored.livros}</li>
+                <li>Empréstimos: ${result.restored.emprestimos}</li>
+                <li>Usuários: ${result.restored.usuarios}</li>
+              </ul>
+            `;
+            
+            setTimeout(() => window.location.reload(), 3000);
+          } catch (error) {
+            showError(error.message);
+          }
+        };
+
+        reader.onerror = () => showError('Erro ao ler o arquivo');
+        reader.readAsText(file);
+      }
+
+      // Book functions
+      function openEditLivroModal(id, titulo, autor, quantidade) {
+        document.getElementById('editLivroId').value = id;
+        document.getElementById('editTitulo').value = titulo;
+        document.getElementById('editAutor').value = autor;
+        document.getElementById('editQuantidade').value = quantidade;
+        showModal('editLivroModal');
+      }
+
+      document.getElementById('editLivroForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        try {
+          const response = await fetchWithAuth(`/livros/${document.getElementById('editLivroId').value}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              
+            },
+            body: JSON.stringify({
+              titulo: document.getElementById('editTitulo').value,
+              autor: document.getElementById('editAutor').value,
+              quantidade: parseInt(document.getElementById('editQuantidade').value),
+              credentials: 'include'
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao atualizar livro');
+          }
+
+          window.location.href = '/?success=Livro atualizado com sucesso';
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+
+      async function deleteLivro(id) {
+        if (confirm('Tem certeza que deseja excluir este livro?')) {
+          try {
+            const response = await fetchWithAuth(`/livros/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao excluir livro');
+            }
+
+            window.location.href = '/?success=Livro excluído com sucesso';
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      }
+
+      // Loan functions
+      async function devolverEmprestimo(id) {
+        if (confirm('Confirmar devolução deste livro?')) {
+          try {
+            const response = await fetchWithAuth(`/emprestimos/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Erro ao registrar devolução');
+            }
+
+            window.location.href = '/?success=Devolução registrada com sucesso';
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      }
+
+      // Student functions
+      async function enviarEmailAluno(id, email) {
+        if (confirm(`Deseja enviar um e-mail para ${email}?`)) {
+          try {
+            const response = await fetchWithAuth(`/alunos/${id}/email`, { 
+              method: 'POST'
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Erro ao enviar e-mail');
+            }
+
+            showSuccess('E-mail enviado com sucesso');
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      }
+
+      // Initialize
+      document.addEventListener('DOMContentLoaded', () => {
+        // If user is admin, load users for management
+        if (user && user.nivelAcesso >= 3) {
+          loadUsersForManagement();
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+          if (event.target.className === 'modal') {
+            event.target.style.display = 'none';
+          }
+        }
+      });
+    </script>
+</body>
+</html>
