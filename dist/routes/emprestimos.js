@@ -254,7 +254,7 @@ router.delete("/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 data: {
                     acao: 'DEVOLUCAO_LIVRO',
                     detalhes: `Livro ${emprestimo.livroId} devolvido pelo aluno ${emprestimo.alunoId}`,
-                    alunoId: emprestimo.aluno.id
+                    alunoId: emprestimo.alunoId
                 }
             })
         ]);

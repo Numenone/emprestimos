@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Biblioteca Digital</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .alert {
+      padding: 10px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+    .alert-success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .alert-error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .auth-section {
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <% if (success) { %>
+      <div class="alert alert-success"><%= success %></div>
+    <% } %>
+    <% if (error) { %>
+      <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <div class="auth-section">
+      <% if (user) { %>
+        <p>Bem-vindo, <%= user.nome %> (Nível: <%= user.nivelAcesso %>)</p>
+        <% if (user.ultimoLogin) { %>
+          <p>Último acesso: <%= user.ultimoLogin %></p>
+        <% } %>
+        <form action="/logout" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit">Logout</button>
+        </form>
+      <% } else { %>
+        <a href="/login">Login</a> | 
+        <a href="/recuperar-senha">Recuperar Senha</a>
+      <% } %>
+    </div>
+
+    <h1>Biblioteca Digital</h1>
+
+    <% if (user) { %>
+      <h2>Livros</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Título</th>
+            <th>Autor</th>
+            <th>Quantidade</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% livros.forEach(livro => { %>
+            <tr>
+              <td><%= livro.titulo %></td>
+              <td><%= livro.autor %></td>
+              <td><%= livro.quantidade %></td>
+              <td>
+                <% if (user.nivelAcesso >= 2) { %>
+                  <form action="/livros/<%= livro.id %>" method="POST" style="display: inline;">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <input type="text" name="titulo" placeholder="Novo título" required>
+                    <input type="text" name="autor" placeholder="Novo autor" required>
+                    <input type="number" name="quantidade" placeholder="Nova quantidade" required>
+                    <button type="submit">Atualizar</button>
+                  </form>
+                  <form action="/livros/<%= livro.id %>" method="POST" style="display: inline;">
+                    <input type="hidden" name="_method" value="DELETE">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit">Excluir</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+
+      <% if (user.nivelAcesso >= 2) { %>
+        <h3>Adicionar Livro</h3>
+        <form action="/livros" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="text" name="titulo" placeholder="Título" required>
+          <input type="text" name="autor" placeholder="Autor" required>
+          <input type="number" name="quantidade" placeholder="Quantidade" required>
+          <button type="submit">Adicionar Livro</button>
+        </form>
+      <% } %>
+
+      <h2>Empréstimos</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Livro</th>
+            <th>Aluno</th>
+            <th>Data Empréstimo</th>
+            <th>Data Devolução</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% emprestimos.forEach(emp => { %>
+            <tr>
+              <td><%= emp.livro.titulo %></td>
+              <td><%= emp.aluno.nome %></td>
+              <td><%= new Date(emp.dataEmprestimo).toLocaleDateString() %></td>
+              <td><%= new Date(emp.dataDevolucao).toLocaleDateString() %></td>
+              <td>
+                <form action="/emprestimos/<%= emp.id %>/devolver" method="POST" style="display: inline;">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit">Devolver</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+
+      <h3>Novo Empréstimo</h3>
+      <form action="/emprestimos" method="POST">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <select name="alunoId" required>
+          <% alunos.forEach(aluno => { %>
+            <option value="<%= aluno.id %>"><%= aluno.nome %> (<%= aluno.matricula %>)</option>
+          <% }); %>
+        </select>
+        <select name="livroId" required>
+          <% livros.forEach(livro => { %>
+            <option value="<%= livro.id %>"><%= livro.titulo %></option>
+          <% }); %>
+        </select>
+        <input type="date" name="dataDevolucao" required>
+        <button type="submit">Registrar Empréstimo</button>
+      </form>
+    <% } else { %>
+      <p>Faça login para acessar o sistema.</p>
+    <% } %>
+
+    <% if (user && user.nivelAcesso >= 3) { %>
+      <hr>
+      <h2>Área Administrativa</h2>
+      <a href="/admin">Painel de Administração</a>
+    <% } %>
+  </div>
+</body>
+</html>

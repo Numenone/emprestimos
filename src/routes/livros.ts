@@ -1,13 +1,18 @@
+// src/routes/livros.ts
 import { PrismaClient } from '@prisma/client';
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authenticateJWT, checkPermission } from '../auth/jwt';
+import { 
+  generateToken,
+  authenticateJWT, 
+  checkPermission,
+  refreshToken
+} from '../auth/jwt';
 import { AuthenticatedRequest } from '../types/express';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-router.use(authenticateJWT);
 
 const livroSchema = z.object({
   titulo: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
@@ -27,8 +32,9 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
     await prisma.log.create({
       data: {
         acao: 'LISTAGEM_LIVROS',
-        detalhes: `Listagem de livros acessada por ${req.user?.email}`,
-        usuarioId: req.user?.id
+        detalhes: `Listagem de livros acessada por ${req.user?.email || req.aluno?.email}`,
+        usuarioId: req.user?.id,
+        alunoId: req.aluno?.id
       }
     });
 
@@ -38,7 +44,8 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
       data: {
         acao: 'ERRO_LISTAGEM_LIVROS',
         detalhes: `Erro ao listar livros: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
-        usuarioId: req.user?.id
+        usuarioId: req.user?.id,
+        alunoId: req.aluno?.id
       }
     });
     res.status(500).json({ error: 'Erro ao buscar livros' });

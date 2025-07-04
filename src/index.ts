@@ -1,40 +1,23 @@
 import express from 'express';
 import axios from 'axios';
 import bodyParser from 'body-parser';
-// import { authenticateJWT } from './auth/jwt'; // Commented out due to missing module
-
-// Temporary placeholder for authenticateJWT middleware
-const authenticateJWT = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  // TODO: Implement JWT authentication logic here
-  next();
-};
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import csrf from 'csurf';
 import cookieParser from 'cookie-parser';
-// import { AuthenticatedRequest } from '../types/express'; // Commented out due to missing module
 import { PrismaClient } from '@prisma/client';
+import { authenticateJWT } from './auth/jwt';
+import { AuthenticatedRequest } from './types/express';
+import { NextFunction, Request, Response } from 'express';
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 3001;
-const API_URL = process.env.API_URL || 'http://localhost:3000';
+const API_URL = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:3000'
+  : 'https://emprestimos-nlq1.onrender.com';
 
-// Enhanced security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", API_URL],
-      frameAncestors: ["'none'"]
-    }
-  }
-}));
 
-// Rate limiting
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -42,16 +25,12 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CSRF protection
-const csrfProtection = csrf({ cookie: true });
-app.use(cookieParser());
-app.use(csrfProtection);
 
-// Body parsing with limits
+app.use(cookieParser());
+
 app.use(bodyParser.urlencoded({ extended: true, limit: '10kb' }));
 app.use(bodyParser.json({ limit: '10kb' }));
 
-// Static files with cache control
 app.use(express.static('public', {
   maxAge: '1d',
   setHeaders: (res, path) => {
@@ -62,49 +41,83 @@ app.use(express.static('public', {
 }));
 
 app.set('view engine', 'ejs');
-app.set('trust proxy', 1); // For secure cookies
+app.set('trust proxy', 1);
 
-// Security headers middleware
-app.use((req, res, next) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
+  
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.locals.csrfToken = req.csrfToken();
+  
+  res.locals.user = (req as AuthenticatedRequest).user;
   next();
 });
 
-// Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+const checkAuth = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const token = req.cookies.token;
+  
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const response = await axios.get(`${API_URL}/usuarios/perfil`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    });
+    req.user = response.data;
+  } catch (error) {
+    res.clearCookie('token');
+    res.clearCookie('refreshToken');
+  }
+  next();
+};
+
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
   
-  // Log the error (fallback to console if Prisma model does not exist)
-  // prisma.log.create({
-  //   data: {
-  //     acao: 'ERRO_FRONTEND',
-  //     detalhes: `Erro no endpoint ${req.method} ${req.path}: ${err.message}`,
-  //     ip: req.ip
-  //   }
-  // }).catch((logError: unknown) => console.error('Failed to log error:', logError));
+  prisma.log.create({
+    data: {
+      acao: 'ERRO_FRONTEND',
+      detalhes: `Erro no endpoint ${req.method} ${req.path}: ${err.message}`,
+      ip: req.ip
+    }
+  }).catch((logError: unknown) => console.error('Failed to log error:', logError));
+}); 
 
-  res.status(500).render('error', { 
-    message: 'Ocorreu um erro no servidor',
-    csrfToken: req.csrfToken()
-  });
-});
-
-// Main page with data and CSRF token
-app.get('/', async (req, res) => {
+export const indexController = async (req: Request, res: Response) => {
   try {
+    const usuarios = await prisma.usuario.findMany({
+      where: { deleted: false },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        nivelAcesso: true,
+        status: true,
+        bloqueado: true
+      }
+    });
+
+    res.render('index', {
+      usuarios: usuarios || [],
+      user: req.user || null
+    });
+  } catch (error) {
+    console.error('Error in index controller:', error);
+    res.status(500).render('error', {
+      message: 'Error loading user data',
+    });
+  }
+};
+
+app.get('/', checkAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const headers = req.cookies.token ? { 'Authorization': `Bearer ${req.cookies.token}` } : {};
+    
     const [alunos, livros, emprestimos] = await Promise.all([
-      axios.get(`${API_URL}/alunos`, {
-        headers: { 'Authorization': `Bearer ${req.cookies.token}` }
-      }).catch(() => ({ data: [] })),
-      axios.get(`${API_URL}/livros`, {
-        headers: { 'Authorization': `Bearer ${req.cookies.token}` }
-      }).catch(() => ({ data: [] })),
-      axios.get(`${API_URL}/emprestimos`, {
-        headers: { 'Authorization': `Bearer ${req.cookies.token}` }
-      }).catch(() => ({ data: [] }))
+      axios.get(`${API_URL}/alunos`, { headers }).catch(() => ({ data: [] })),
+      axios.get(`${API_URL}/livros`, { headers }).catch(() => ({ data: [] })),
+      axios.get(`${API_URL}/emprestimos`, { headers }).catch(() => ({ data: [] }))
     ]);
     
     res.render('index', {
@@ -113,36 +126,34 @@ app.get('/', async (req, res) => {
       emprestimos: emprestimos.data,
       success: req.query.success,
       error: req.query.error,
-      csrfToken: req.csrfToken()
-      // user: req.user // Removed because req.user does not exist on Request type
+      user: req.user
     });
   } catch (error) {
     console.error('Error loading data:', error);
     res.render('error', { 
       message: 'Erro ao carregar dados',
-      csrfToken: req.csrfToken()
     });
   }
 });
 
-// Authentication routes
-app.post('/login', async (req, res) => {
+app.post('/login', async (req: Request, res: Response) => {
   try {
     const response = await axios.post(`${API_URL}/usuarios/login`, req.body);
     
-    // Set secure, HTTP-only cookies
     res.cookie('token', response.data.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 3600000, // 1 hour
-      sameSite: 'strict'
+      maxAge: 3600000,
+      sameSite: 'strict',
+      path: '/'
     });
     
     res.cookie('refreshToken', response.data.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 604800000, // 7 days
-      sameSite: 'strict'
+      maxAge: 604800000,
+      sameSite: 'strict',
+      path: '/'
     });
     
     res.redirect('/?success=Login realizado com sucesso');
@@ -152,17 +163,30 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/logout', (_req, res) => {
-  // Clear cookies
+app.post('/logout', (req: Request, res: Response) => {
   res.clearCookie('token');
   res.clearCookie('refreshToken');
   res.redirect('/?success=Logout realizado com sucesso');
 });
 
-// Student routes with CSRF and JWT protection
-app.post('/alunos', csrfProtection, async (req, res) => {
+app.post('/usuarios', async (req: Request, res: Response) => {
   try {
-    await axios.post(`${API_URL}/alunos`, req.body);
+    const response = await axios.post(`${API_URL}/usuarios`, req.body);
+    res.redirect('/?success=Usuário cadastrado com sucesso. Verifique seu email para ativar a conta.');
+  } catch (error: any) {
+    const errorMsg = error.response?.data?.error || 'Erro ao cadastrar usuário';
+    res.redirect(`/?error=${encodeURIComponent(errorMsg)}`);
+  }
+});
+
+const protectedRoutes = express.Router();
+protectedRoutes.use(authenticateJWT);
+
+protectedRoutes.post('/alunos', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    await axios.post(`${API_URL}/alunos`, req.body, {
+      headers: { 'Authorization': `Bearer ${req.cookies.token}` }, 
+    });
     res.redirect('/?success=Aluno cadastrado com sucesso');
   } catch (error: any) {
     const errorMsg = error.response?.data?.error || 'Erro ao criar aluno';
@@ -170,7 +194,7 @@ app.post('/alunos', csrfProtection, async (req, res) => {
   }
 });
 
-app.post('/alunos/:id/email', authenticateJWT, csrfProtection, async (req, res) => {
+protectedRoutes.post('/alunos/:id/email', async (req: AuthenticatedRequest, res: Response) => {
   try {
     await axios.post(`${API_URL}/alunos/${req.params.id}/email`, {}, {
       headers: { 'Authorization': `Bearer ${req.cookies.token}` }
@@ -182,8 +206,7 @@ app.post('/alunos/:id/email', authenticateJWT, csrfProtection, async (req, res) 
   }
 });
 
-// Book routes with CSRF and JWT protection
-app.post('/livros', authenticateJWT, csrfProtection, async (req, res) => {
+protectedRoutes.post('/livros', async (req: AuthenticatedRequest, res: Response) => {
   try {
     await axios.post(`${API_URL}/livros`, req.body, {
       headers: { 'Authorization': `Bearer ${req.cookies.token}` }
@@ -195,7 +218,7 @@ app.post('/livros', authenticateJWT, csrfProtection, async (req, res) => {
   }
 });
 
-app.post('/livros/:id', authenticateJWT, csrfProtection, async (req, res) => {
+protectedRoutes.post('/livros/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { titulo, autor, quantidade } = req.body;
@@ -209,8 +232,7 @@ app.post('/livros/:id', authenticateJWT, csrfProtection, async (req, res) => {
   }
 });
 
-// Loan routes with CSRF and JWT protection
-app.post('/emprestimos', authenticateJWT, csrfProtection, async (req, res) => {
+protectedRoutes.post('/emprestimos', async (req: AuthenticatedRequest, res: Response) => {
   try {
     await axios.post(`${API_URL}/emprestimos`, req.body, {
       headers: { 'Authorization': `Bearer ${req.cookies.token}` }
@@ -222,7 +244,7 @@ app.post('/emprestimos', authenticateJWT, csrfProtection, async (req, res) => {
   }
 });
 
-app.post('/emprestimos/:id/devolver', authenticateJWT, csrfProtection, async (req, res) => {
+protectedRoutes.post('/emprestimos/:id/devolver', async (req: AuthenticatedRequest, res: Response) => {
   try {
     await axios.delete(`${API_URL}/emprestimos/${req.params.id}`, {
       headers: { 'Authorization': `Bearer ${req.cookies.token}` }
@@ -234,57 +256,83 @@ app.post('/emprestimos/:id/devolver', authenticateJWT, csrfProtection, async (re
   }
 });
 
-// Password recovery routes
-app.get('/recuperar-senha', csrfProtection, (req, res) => {
+app.get('/recuperar-senha', (req: Request, res: Response) => {
   res.render('recover-password', { 
-    csrfToken: req.csrfToken(),
     step: 1 
   });
 });
 
-app.post('/recuperar-senha', csrfProtection, async (req, res) => {
+app.post('/recuperar-senha', async (req: Request, res: Response) => {
   try {
     await axios.post(`${API_URL}/usuarios/recuperar-senha`, { email: req.body.email });
     res.render('recover-password', {
-      csrfToken: req.csrfToken(),
       step: 2,
       email: req.body.email,
-      message: 'Código enviado para seu e-mail'
+      message: 'Código enviado para seu e-mail',
+      error: null
     });
   } catch (error: any) {
     res.render('recover-password', {
-      csrfToken: req.csrfToken(),
       step: 1,
+      email: req.body.email,
+      message: null,
       error: error.response?.data?.error || 'Erro ao solicitar recuperação'
     });
   }
 });
 
-app.post('/redefinir-senha', csrfProtection, async (req, res) => {
+app.post('/redefinir-senha', async (req: Request, res: Response) => {
   try {
     await axios.post(`${API_URL}/usuarios/redefinir-senha`, req.body);
     res.redirect('/login?success=Senha redefinida com sucesso');
   } catch (error: any) {
     res.render('recover-password', {
-      csrfToken: req.csrfToken(),
       step: 2,
       email: req.body.email,
+      message: null,
       error: error.response?.data?.error || 'Erro ao redefinir senha'
     });
   }
 });
 
-// Server startup with enhanced security
+const adminRoutes = express.Router();
+adminRoutes.use(authenticateJWT);
+
+
+adminRoutes.get('/admin', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const [usuarios, logs] = await Promise.all([
+      prisma.usuario.findMany({ where: { deleted: false } }),
+      prisma.log.findMany({ orderBy: { createdAt: 'desc' }, take: 50 })
+    ]);
+
+    const safeUsuarios = (usuarios || []).filter(u => u);
+    
+    res.render('admin', {
+      usuarios: safeUsuarios,
+      logs: logs || [],
+      user: req.user
+    });
+  } catch (error) {
+    console.error('Admin error:', error);
+    res.status(500).render('error', { 
+      message: 'Erro ao carregar dados administrativos',
+    });
+  }
+});
+
+app.use(protectedRoutes);
+app.use(adminRoutes);
+
 const server = app.listen(PORT, () => {
   console.log(`Sistema de Biblioteca rodando em http://localhost:${PORT}`);
   console.log('Configurações de segurança ativadas:');
   console.log('- Helmet (CSP, XSS, etc)');
   console.log('- Rate limiting');
-  console.log('- CSRF protection');
   console.log('- Secure cookies');
+  console.log('- JWT authentication');
 });
 
-// Graceful shutdown
 const shutdown = () => {
   console.log('Encerrando servidor...');
   server.close(async () => {

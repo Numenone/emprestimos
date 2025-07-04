@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Biblioteca Digital</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/public/styles.css">
+  <style>
+    /* Estilos consistentes com a página principal */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f5f7fa;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    header {
+      background-color: #3498db;
+      color: white;
+      padding: 20px 0;
+      margin-bottom: 30px;
+    }
+    
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .admin-section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    th {
+      background-color: #ecf0f1;
+      font-weight: 600;
+    }
+    
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+    
+    .btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+    
+    .btn-danger {
+      background-color: #e74c3c;
+      color: white;
+    }
+    
+    .backup-section {
+      background-color: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 30px;
+    }
+    
+    .backup-actions {
+      display: flex;
+      gap: 15px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-content">
+      <h1>Painel Administrativo</h1>
+      <div>
+        <span style="margin-right: 15px;">Bem-vindo, <%= user.nome %></span>
+        <a href="/" style="color: white; text-decoration: none;">Voltar</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="admin-section">
+      <h2>Usuários do Sistema</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Nome</th>
+            <th>Email</th>
+            <th>Nível</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% usuarios.forEach(usuario => { %>
+            <tr>
+              <td><%= usuario.id %></td>
+              <td><%= usuario.nome %></td>
+              <td><%= usuario.email %></td>
+              <td><%= usuario.nivelAcesso %></td>
+              <td><%= usuario.status %></td>
+              <td>
+                <form action="/usuarios/<%= usuario.id %>" method="POST" style="display: inline;">
+                  <input type="hidden" name="_method" value="DELETE">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button type="submit" class="btn btn-danger">Excluir</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="admin-section">
+      <h2>Logs do Sistema</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Ação</th>
+            <th>Detalhes</th>
+            <th>Usuário</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% logs.forEach(log => { %>
+            <tr>
+              <td><%= new Date(log.createdAt).toLocaleString() %></td>
+              <td><%= log.acao %></td>
+              <td><%= log.detalhes %></td>
+              <td><%= log.usuarioId || 'Sistema' %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="backup-section">
+      <h2>Backup do Sistema</h2>
+      <p>Gerencie os backups do sistema aqui:</p>
+      
+      <div class="backup-actions">
+        <form action="/backup" method="POST">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button type="submit" class="btn">Realizar Backup</button>
+        </form>
+
+        <form action="/restore" method="POST" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="file" name="backupFile" accept=".json" required>
+          <button type="submit" class="btn">Restaurar Backup</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

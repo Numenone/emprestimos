@@ -1,7 +1,12 @@
 import { PrismaClient } from '@prisma/client';
 import { Router, Response } from 'express';
 import { z } from 'zod';
-import { authenticateJWT, checkPermission } from '../auth/jwt';
+import { 
+  generateToken,
+  authenticateJWT, 
+  checkPermission,
+  refreshToken
+} from '../auth/jwt';
 import { AuthenticatedRequest } from '../types/express';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
@@ -51,7 +56,6 @@ const emprestimoUpdateSchema = z.object({
   dataDevolucao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
-router.use(authenticateJWT);
 
 // Error handling utility
 function handleError(res: Response, error: unknown, action: string) {
@@ -283,7 +287,7 @@ router.delete("/:id", async (req: AuthenticatedRequest, res: Response) => {
         data: {
           acao: 'DEVOLUCAO_LIVRO',
           detalhes: `Livro ${emprestimo.livroId} devolvido pelo aluno ${emprestimo.alunoId}`,
-          alunoId: emprestimo.aluno.id
+          alunoId: emprestimo.alunoId
         }
       })
     ]);
@@ -552,10 +556,9 @@ function generateEmailHtml(aluno: any): string {
           </thead>
           <tbody>
             ${aluno.emprestimos.map((emp: { 
-           livro: { titulo: string; autor: string } | null; 
-           dataDevolucao: Date 
-          }) => {
-              
+              livro: { titulo: string; autor: string } | null; 
+              dataDevolucao: Date 
+            }) => {
               const isOverdue = emp.dataDevolucao < new Date();
               return `
                 <tr style="${isOverdue ? 'background-color: #fff3bf;' : ''}">

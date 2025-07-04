@@ -27,6 +27,7 @@ model Usuario {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   logs             Log[]
+  emprestimos      Emprestimo[]
 }
 
 model Aluno {
@@ -65,8 +66,10 @@ model Livro {
 
 model Emprestimo {
   id             Int      @id @default(autoincrement())
-  aluno          Aluno    @relation(fields: [alunoId], references: [id])
-  alunoId        Int
+  aluno          Aluno?   @relation(fields: [alunoId], references: [id])
+  alunoId        Int?
+  usuario        Usuario? @relation(fields: [usuarioId], references: [id])
+  usuarioId      Int?
   livro          Livro    @relation(fields: [livroId], references: [id])
   livroId        Int
   dataEmprestimo DateTime @default(now())
@@ -87,4 +90,5 @@ model Log {
   aluno     Aluno?   @relation(fields: [alunoId], references: [id])
   alunoId   Int?
   createdAt DateTime @default(now())
+  ip        String? 
 }

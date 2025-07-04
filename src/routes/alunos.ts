@@ -3,7 +3,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { 
-  generateToken, 
+  generateToken,
   authenticateJWT, 
   checkPermission,
   refreshToken
@@ -33,17 +33,16 @@ const transporter = nodemailer.createTransport({
 });
 
 const alunoSchema = z.object({
-  nome: z.string().min(3, "Nome deve ter pelo menos 3 caracteres"),
-  email: z.string().email("Email inválido"),
-  matricula: z.string().min(5, "Matrícula deve ter pelo menos 5 caracteres"),
-  senha: z.string()
-    .min(8, "Senha deve ter pelo menos 8 caracteres")
-    .regex(/[A-Z]/, "Senha deve conter pelo menos uma letra maiúscula")
-    .regex(/[a-z]/, "Senha deve conter pelo menos uma letra minúscula")
-    .regex(/[0-9]/, "Senha deve conter pelo menos um número")
-    .regex(/[^A-Za-z0-9]/, "Senha deve conter pelo menos um símbolo"),
-  perguntaSeguranca: z.string().min(5, "Pergunta de segurança deve ter pelo menos 5 caracteres").optional(),
-  respostaSeguranca: z.string().min(2, "Resposta de segurança deve ter pelo menos 2 caracteres").optional()
+  nome: z.string().min(3),
+  email: z.string().email(),
+  matricula: z.string().min(5),
+  senha: z.string().min(8)
+    .regex(/[A-Z]/)
+    .regex(/[a-z]/)
+    .regex(/[0-9]/)
+    .regex(/[^A-Za-z0-9]/),
+  perguntaSeguranca: z.string().min(5).optional(),
+  respostaSeguranca: z.string().min(2).optional()
 });
 
 // Rotas públicas
@@ -62,16 +61,18 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
     const hashedPassword = await bcrypt.hash(senha, SALT_ROUNDS);
     const codigoAtivacao = Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    const aluno = await prisma.aluno.create({
-      data: {
-        nome,
-        email,
-        matricula,
-        senha: hashedPassword,
-        codigoAtivacao,
-        status: "INATIVO",
-        perguntaSeguranca,
-        respostaSeguranca: respostaSeguranca ? await bcrypt.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS) : null
+  const aluno = await prisma.aluno.create({
+    data: {
+      nome,
+      email,
+      matricula,
+      senha: hashedPassword,
+      codigoAtivacao,
+      status: "INATIVO",
+      perguntaSeguranca,
+      respostaSeguranca: respostaSeguranca 
+        ? await bcrypt.hash(respostaSeguranca.toLowerCase(), SALT_ROUNDS) 
+        : null
       }
     });
 
@@ -640,40 +641,40 @@ router.delete("/:id", authenticateJWT, checkPermission(3), async (req: Authentic
 });
 
 // Função auxiliar para gerar HTML do email
-// function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
-//   return `
-//     <div style="font-family: Arial, sans-serif; padding: 20px;">
-//       <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
-//       <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
+function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
+  return `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
+      <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
       
-//       <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-//         <thead>
-//           <tr style="background-color: #f8f9fa;">
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
-//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
-//           </tr>
-//         </thead>
-//         <tbody>
-//           ${aluno.emprestimos.map((emp: EmprestimoComLivro) => {
-//             const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
-//             return `
-//               <tr>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
-//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">
-//                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
-//                 </td>
-//               </tr>
-//             `;
-//           }).join('')}
-//         </tbody>
-//       </table>
-//     </div>
-//   `;
-// }
+      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+          <tr style="background-color: #f8f9fa;">
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
+            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${aluno.emprestimos.map((emp: EmprestimoComLivro) => {
+            const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
+            return `
+              <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                  ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 
 // Encerramento correto do Prisma
 process.on('SIGTERM', async () => {
