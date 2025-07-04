@@ -43,3 +43,28 @@ model Emprestimo {
   @@index([alunoId])
   @@index([livroId])
 }
+
+model Usuario {
+  id          Int      @id @default(autoincrement())
+  nome        String
+  email       String   @unique
+  senha       String
+  status      String   @default("INATIVO")
+  codigoAtivacao String?
+  nivelAcesso Int      @default(1)
+  ultimoLogin DateTime?
+  tentativasLogin Int   @default(0)
+  bloqueado   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  logs        Log[]
+}
+
+model Log {
+  id          Int      @id @default(autoincrement())
+  acao        String
+  detalhes    String?
+  usuarioId   Int
+  createdAt   DateTime @default(now())
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id])
+}
