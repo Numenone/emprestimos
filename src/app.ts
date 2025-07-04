@@ -1,4 +1,3 @@
-// src/app.ts
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -9,46 +8,118 @@ import emprestimosRouter from './routes/emprestimos';
 import usuariosRouter from './routes/usuarios';
 import { authenticateJWT } from './auth/jwt';
 import fs from 'fs';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
+import { Request, Response, NextFunction } from 'express';
 
 const prisma = new PrismaClient();
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Enhanced security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "trusted-cdn.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", process.env.FRONTEND_URL || 'http://localhost:3001'],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"]
+    }
+  },
+  hsts: {
+    maxAge: 63072000,
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'same-origin' }
+}));
 
-// Configuração de arquivos estáticos
+// CORS configuration
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  maxAge: 86400
+}));
+
+// Request logging
+app.use(morgan('combined'));
+
+// Rate limiting - more strict for auth endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  message: 'Too many requests from this IP, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use(apiLimiter);
+app.use('/usuarios/login', authLimiter);
+app.use('/alunos/login', authLimiter);
+
+// Body parsing with size limits
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+
+// Static files with cache control
 const publicPath = path.join(__dirname, '../public');
-app.use(express.static(publicPath));
+app.use(express.static(publicPath, {
+  maxAge: '1d',
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
-// Rotas públicas
+// Public routes
 app.use('/alunos', alunosRouter);
 app.use('/usuarios', usuariosRouter);
 
-// Rotas protegidas
+// Protected routes with JWT authentication
 app.use('/livros', authenticateJWT, livrosRouter);
 app.use('/emprestimos', authenticateJWT, emprestimosRouter);
 
-// Rota de status
+// Status route
 app.get('/status', (req, res) => {
   res.json({ 
     status: 'online',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    security: {
+      cors: true,
+      helmet: true,
+      rateLimiting: true,
+      jwtAuth: true
+    }
   });
 });
 
-// Tratamento de erros
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Erro interno do servidor' });
-});
-
-// Backup route
+// Backup route with admin permission check
 app.post('/backup', authenticateJWT, async (req, res) => {
   try {
+    // Check if user has admin privileges
+    const user = req.user || req.aluno;
+    if (!user || user.nivelAcesso < 3) {
+      return res.status(403).json({ 
+        error: 'Acesso negado. Permissão insuficiente para realizar backup.' 
+      });
+    }
+
     const backupDir = path.join(__dirname, '../../backups');
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
@@ -65,33 +136,53 @@ app.post('/backup', authenticateJWT, async (req, res) => {
 
     fs.writeFileSync(backupFile, JSON.stringify(backupData, null, 2));
 
+    // Log the backup action
+    await prisma.log.create({
+      data: {
+        acao: 'BACKUP_SISTEMA',
+        detalhes: `Backup realizado por ${user.email}`,
+        usuarioId: user.id,
+        alunoId: user.id
+      }
+    });
+
     res.json({ 
       success: true, 
       message: 'Backup realizado com sucesso',
       file: backupFile
     });
   } catch (error) {
+    console.error('Backup error:', error);
     res.status(500).json({ error: 'Erro ao realizar backup' });
   }
 });
 
-// Restore route
+// Restore route with admin permission check
 app.post('/restore', authenticateJWT, async (req, res) => {
   try {
-    const { backupFile } = req.body;
-    
-    if (!backupFile || !fs.existsSync(backupFile)) {
-      return res.status(400).json({ error: 'Arquivo de backup inválido' });
+    // Check if user has admin privileges
+    const user = req.user || req.aluno;
+    if (!user || user.nivelAcesso < 3) {
+      return res.status(403).json({ 
+        error: 'Acesso negado. Permissão insuficiente para realizar restauração.' 
+      });
     }
 
-    const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf-8'));
+    const { backupFile } = req.body;
+    if (!backupFile || !fs.existsSync(backupFile)) {
+      return res.status(400).json({ error: 'Arquivo de backup inválido ou não encontrado' });
+    }
 
-    // Clear existing data (optional - you might want to merge instead)
-    await prisma.log.deleteMany();
-    await prisma.emprestimo.deleteMany();
-    await prisma.aluno.deleteMany();
-    await prisma.livro.deleteMany();
-    await prisma.usuario.deleteMany();
+    const backupData = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+
+    // Start transaction for data restoration
+    await prisma.$transaction([
+      prisma.aluno.deleteMany(),
+      prisma.livro.deleteMany(),
+      prisma.emprestimo.deleteMany(),
+      prisma.usuario.deleteMany(),
+      prisma.log.deleteMany()
+    ]);
 
     // Restore data
     await prisma.aluno.createMany({ data: backupData.alunos });
@@ -100,10 +191,20 @@ app.post('/restore', authenticateJWT, async (req, res) => {
     await prisma.usuario.createMany({ data: backupData.usuarios });
     await prisma.log.createMany({ data: backupData.logs });
 
+    // Log the restore action
+    await prisma.log.create({
+      data: {
+        acao: 'RESTORE_SISTEMA',
+        detalhes: `Restauração realizada por ${user.email} a partir do arquivo ${backupFile}`,
+        usuarioId: user.id,
+        alunoId: user.id
+      }
+    });
+
     res.json({ 
       success: true, 
       message: 'Restauração realizada com sucesso',
-      restoredItems: {
+      restored: {
         alunos: backupData.alunos.length,
         livros: backupData.livros.length,
         emprestimos: backupData.emprestimos.length,
@@ -112,31 +213,77 @@ app.post('/restore', authenticateJWT, async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: 'Erro ao restaurar backup' });
+    console.error('Restore error:', error);
+    res.status(500).json({ error: 'Erro ao realizar restauração' });
   }
 });
 
-// Inicialização do servidor
+// Enhanced error handling
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error(err.stack);
+  
+  // Log the error
+  prisma.log.create({
+    data: {
+      acao: 'ERRO_SERVIDOR',
+      detalhes: `Erro no endpoint ${req.method} ${req.path}: ${err.message}`,
+      usuarioId: req.user?.id,
+      alunoId: req.aluno?.id
+    }
+  }).catch(logError => console.error('Failed to log error:', logError));
+
+  // Security headers for error responses
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  
+  res.status(500).json({ 
+    error: 'Erro interno do servidor',
+    requestId: req.id
+  });
+});
+
+// Security headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Feature-Policy', "geolocation 'none'; microphone 'none'; camera 'none'");
+  next();
+});
+
+// Server startup with enhanced security
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log(`Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  console.log('Configurações de segurança ativadas:');
+  console.log('- Helmet (CSP, HSTS, etc)');
+  console.log('- Rate limiting');
+  console.log('- CORS restrito');
+  console.log('- Autenticação JWT obrigatória para rotas protegidas');
 });
 
-// Tratamento de encerramento
-process.on('SIGTERM', async () => {
-  console.log('Recebido SIGTERM. Encerrando servidor...');
-  await prisma.$disconnect();
-  server.close(() => {
-    console.log('Servidor encerrado');
-    process.exit(0);
-  });
-});
+// Graceful shutdown with cleanup
+const shutdown = async () => {
+  console.log('Encerrando servidor...');
+  try {
+    await prisma.$disconnect();
+    server.close(() => {
+      console.log('Servidor encerrado');
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error('Erro durante o encerramento:', error);
+    process.exit(1);
+  }
+};
 
-process.on('SIGINT', async () => {
-  console.log('Recebido SIGINT. Encerrando servidor...');
-  await prisma.$disconnect();
-  server.close(() => {
-    console.log('Servidor encerrado');
-    process.exit(0);
-  });
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught Exception:', error);
+  await shutdown();
+});
+process.on('unhandledRejection', async (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  await shutdown();
 });

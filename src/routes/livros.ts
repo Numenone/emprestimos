@@ -1,4 +1,3 @@
-// src/routes/livros.ts
 import { PrismaClient } from '@prisma/client';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
@@ -7,7 +6,16 @@ import { authenticateJWT, checkPermission } from '../auth/jwt';
 const prisma = new PrismaClient();
 const router = Router();
 
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: number;
+    email: string;
+    nivel: number;
+  };
+}
+
 router.use(authenticateJWT);
+
 
 const livroSchema = z.object({
   titulo: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
