@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client';
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { authenticateJWT, checkPermission } from '../auth/jwt';
+import { AuthenticatedRequest } from '../types/express';
 import rateLimit from 'express-rate-limit';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
@@ -10,7 +11,6 @@ dotenv.config();
 const prisma = new PrismaClient();
 const router = Router();
 
-// Email transporter configuration
 const transporter = nodemailer.createTransport({
   host: process.env.MAIL_HOST || 'smtp.example.com',
   port: parseInt(process.env.MAIL_PORT || '587'),
@@ -20,6 +20,16 @@ const transporter = nodemailer.createTransport({
     pass: process.env.MAIL_PASS
   }
 });
+
+interface EmprestimoComLivro {
+  livro?: {
+    id: number;
+    titulo: string;
+    autor: string;
+    quantidade: number;
+  };
+  dataDevolucao: Date | null;
+}
 
 // Rate limiting for email sending
 const emailRateLimiter = rateLimit({
@@ -63,7 +73,7 @@ function handleError(res: Response, error: unknown, action: string) {
 }
 
 // POST criar empréstimo
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", async (req: AuthenticatedRequest, res: Response) => {
   const validation = emprestimoCreateSchema.safeParse(req.body);
   
   if (!validation.success) {
@@ -179,7 +189,7 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 // GET - List active loans with pagination and filters
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const pageSize = Math.min(parseInt(req.query.pageSize as string) || 10, 100);
   const skip = (page - 1) * pageSize;
@@ -232,7 +242,7 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 // DELETE - Return book
-router.delete("/:id", async (req: Request, res: Response) => {
+router.delete("/:id", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const emprestimo = await prisma.emprestimo.findUnique({
       where: { id: Number(req.params.id) },
@@ -295,7 +305,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 });
 
 // PUT - Full update loan (admin only)
-router.put("/:id", checkPermission(2), async (req: Request, res: Response) => {
+router.put("/:id", checkPermission(2), async (req: AuthenticatedRequest, res: Response) => {
   const validation = emprestimoCreateSchema.safeParse(req.body);
   
   if (!validation.success) {
@@ -369,7 +379,7 @@ router.put("/:id", checkPermission(2), async (req: Request, res: Response) => {
 });
 
 // PATCH - Partial update loan (admin only)
-router.patch("/:id", checkPermission(2), async (req: Request, res: Response) => {
+router.patch("/:id", checkPermission(2), async (req: AuthenticatedRequest, res: Response) => {
   const validation = emprestimoUpdateSchema.safeParse(req.body);
   
   if (!validation.success) {
@@ -450,7 +460,7 @@ router.patch("/:id", checkPermission(2), async (req: Request, res: Response) => 
 });
 
 // POST - Send email with active loans (with rate limiting)
-router.post('/:id/email', emailRateLimiter, async (req: Request, res: Response) => {
+router.post('/:id/email', emailRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: Number(req.params.id) },
@@ -541,7 +551,11 @@ function generateEmailHtml(aluno: any): string {
             </tr>
           </thead>
           <tbody>
-            ${aluno.emprestimos.map(emp => {
+            ${aluno.emprestimos.map((emp: { 
+           livro: { titulo: string; autor: string } | null; 
+           dataDevolucao: Date 
+          }) => {
+              
               const isOverdue = emp.dataDevolucao < new Date();
               return `
                 <tr style="${isOverdue ? 'background-color: #fff3bf;' : ''}">

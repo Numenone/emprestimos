@@ -18,7 +18,7 @@ app.use('/alunos', alunos_1.default);
 app.use('/livros', livros_1.default);
 app.use('/emprestimos', emprestimos_1.default);
 // Middleware de erro global
-app.use((err, req, res, next) => {
+app.use((err, _req, res, _next) => {
     console.error('Erro global:', err);
     res.status(500).json({
         success: false,

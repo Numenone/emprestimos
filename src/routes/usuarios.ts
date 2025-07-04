@@ -1,23 +1,32 @@
-import { PrismaClient, Usuario, Log } from '@prisma/client';
-import { Router, Request, Response } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 import nodemailer from 'nodemailer';
-import path from 'path';
-import fs from 'fs';
 import rateLimit from 'express-rate-limit';
+import { AuthenticatedRequest } from '../types/express';
+import { authenticateJWT, checkPermission as jwtCheckPermission } from '../auth/jwt';
 
-dotenv.config();
-
-const prisma = new PrismaClient();
 const router = Router();
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.JWT_SECRET || 'your_secure_secret_here';
+
+// Prisma client instance
+const prisma = new PrismaClient();
+
+// Middleware para checar permissão de acesso
+function checkPermission(nivelMinimo: number) {
+  return (req: AuthenticatedRequest, res: Response, next: Function) => {
+    if (req.user && req.user.nivelAcesso >= nivelMinimo) {
+      return next();
+    }
+    return res.status(403).json({ success: false, error: 'Permissão insuficiente' });
+  };
+}
+
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'your_refresh_secret_here';
-const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY || '1h';
-const REFRESH_EXPIRY = process.env.REFRESH_EXPIRY || '7d';
+// const TOKEN_EXPIRY = process.env.TOKEN_EXPIRY || '1h';
+// const REFRESH_EXPIRY = process.env.REFRESH_EXPIRY || '7d';
 
 // Rate limiting for authentication endpoints
 const authRateLimiter = rateLimit({
@@ -90,21 +99,21 @@ const passwordResetSchema = z.object({
 });
 
 // Utility functions
-function generateTokens(userId: number, nivelAcesso: number) {
-  const token = jwt.sign(
-    { id: userId, nivel: nivelAcesso }, 
-    JWT_SECRET, 
-    { expiresIn: TOKEN_EXPIRY }
+export const generateToken = (userId: number, nivelAcesso: number): string => {
+  return jwt.sign(
+    { id: userId, nivel: nivelAcesso },
+    process.env.JWT_SECRET || 'your_secret_key',
+    { expiresIn: '1h' }
   );
-  
-  const refreshToken = jwt.sign(
-    { id: userId }, 
-    REFRESH_SECRET, 
-    { expiresIn: REFRESH_EXPIRY }
+};
+
+export const refreshToken = (userId: number, nivelAcesso: number): string => {
+  return jwt.sign(
+    { id: userId, nivel: nivelAcesso },
+    process.env.REFRESH_SECRET || 'your_refresh_secret', 
+    { expiresIn: '7d' }
   );
-  
-  return { token, refreshToken };
-}
+};
 
 async function sendActivationEmail(email: string, nome: string, codigo: string) {
   const mailOptions = {
@@ -169,7 +178,7 @@ function handleError(res: Response, error: unknown, action: string) {
 }
 
 // Routes
-router.post("/", authRateLimiter, async (req: Request, res: Response) => {
+router.post("/", authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = usuarioSchema.safeParse(req.body);
     
@@ -227,7 +236,7 @@ router.post("/", authRateLimiter, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
+router.post("/ativar", authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = activateAccountSchema.safeParse(req.body);
     
@@ -241,24 +250,26 @@ router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
 
     const { email, codigo } = validation.data;
 
-    const usuario = await prisma.usuario.findUnique({ 
-      where: { email, deleted: false } 
+    const usuario = await prisma.usuario.findFirst({ 
+      where: { 
+        email,
+        deleted: false 
+      } 
     });
     
     if (!usuario) {
       return res.status(404).json({ 
         success: false,
-        error: 'Usuário não encontrado' 
+        error: 'Usuário não encontrado'
       });
     }
 
     if (usuario.status === 'ATIVO') {
       return res.status(400).json({ 
         success: false,
-        error: 'Conta já está ativa' 
+        error: 'Conta já está ativada' 
       });
     }
-
     if (usuario.codigoAtivacao !== codigo) {
       return res.status(400).json({ 
         success: false,
@@ -266,7 +277,7 @@ router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
       });
     }
 
-    const updatedUser = await prisma.usuario.update({
+    await prisma.usuario.update({
       where: { id: usuario.id },
       data: { 
         status: 'ATIVO',
@@ -276,13 +287,14 @@ router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
 
     await logAction('ATIVACAO_CONTA', `Usuário ativou a conta: ${email}`, usuario.id);
 
-    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+    const token = generateToken(usuario.id, usuario.nivelAcesso);
+    const newRefreshToken = refreshToken(usuario.id, usuario.nivelAcesso);
 
     res.json({ 
       success: true,
       data: {
         token,
-        refreshToken,
+        refreshToken: newRefreshToken,
         usuario: {
           id: usuario.id,
           nome: usuario.nome,
@@ -297,7 +309,8 @@ router.post("/ativar", authRateLimiter, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
+// LOGIN ROUTE FIXED
+router.post("/login", authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = loginSchema.safeParse(req.body);
     
@@ -311,8 +324,11 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
 
     const { email, senha } = validation.data;
 
-    const usuario = await prisma.usuario.findUnique({ 
-      where: { email, deleted: false } 
+    const usuario = await prisma.usuario.findFirst({ 
+      where: { 
+        email,
+        deleted: false 
+      } 
     });
 
     if (!usuario || !usuario.senha) {
@@ -378,13 +394,14 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
 
     await logAction('LOGIN', `Login bem-sucedido para ${email}`, usuario.id);
 
-    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+    const token = generateToken(usuario.id, usuario.nivelAcesso);
+    const newRefreshToken = refreshToken(usuario.id, usuario.nivelAcesso);
 
     res.json({ 
       success: true,
       data: {
         token,
-        refreshToken,
+        refreshToken: newRefreshToken,
         usuario: {
           id: usuario.id,
           nome: usuario.nome,
@@ -401,7 +418,7 @@ router.post("/login", authRateLimiter, async (req: Request, res: Response) => {
   }
 });
 
-router.post("/refresh-token", async (req: Request, res: Response) => {
+router.post("/refresh-token", async (req: AuthenticatedRequest, res: Response) => {
   const { refreshToken } = req.body;
   
   if (!refreshToken) {
@@ -414,8 +431,11 @@ router.post("/refresh-token", async (req: Request, res: Response) => {
   try {
     const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as { id: number };
     
-    const usuario = await prisma.usuario.findUnique({
-      where: { id: decoded.id, deleted: false }
+    const usuario = await prisma.usuario.findFirst({
+      where: { 
+        id: decoded.id,
+        deleted: false 
+      }
     });
 
     if (!usuario || usuario.bloqueado || usuario.status !== 'ATIVO') {
@@ -425,12 +445,13 @@ router.post("/refresh-token", async (req: Request, res: Response) => {
       });
     }
 
-    const { token, refreshToken: newRefreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+    const newToken = generateToken(usuario.id, usuario.nivelAcesso);
+    const newRefreshToken = refreshToken(usuario.id, usuario.nivelAcesso);
 
     res.json({ 
       success: true,
       data: {
-        token,
+        token: newToken,
         refreshToken: newRefreshToken
       }
     });
@@ -442,7 +463,7 @@ router.post("/refresh-token", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/recuperar-senha", authRateLimiter, async (req: Request, res: Response) => {
+router.post("/recuperar-senha", authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { email } = req.body;
     
@@ -453,8 +474,11 @@ router.post("/recuperar-senha", authRateLimiter, async (req: Request, res: Respo
       });
     }
 
-    const usuario = await prisma.usuario.findUnique({ 
-      where: { email, deleted: false } 
+    const usuario = await prisma.usuario.findFirst({ 
+      where: { 
+        email,
+        deleted: false 
+      } 
     });
     
     if (!usuario) {
@@ -509,7 +533,7 @@ router.post("/recuperar-senha", authRateLimiter, async (req: Request, res: Respo
   }
 });
 
-router.post("/redefinir-senha", authRateLimiter, async (req: Request, res: Response) => {
+router.post("/redefinir-senha", authRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const validation = passwordResetSchema.safeParse(req.body);
     
@@ -523,8 +547,11 @@ router.post("/redefinir-senha", authRateLimiter, async (req: Request, res: Respo
 
     const { email, codigo, resposta, novaSenha } = validation.data;
 
-    const usuario = await prisma.usuario.findUnique({ 
-      where: { email, deleted: false } 
+    const usuario = await prisma.usuario.findFirst({ 
+      where: { 
+        email,
+        deleted: false 
+      } 
     });
     
     if (!usuario) {
@@ -576,13 +603,14 @@ router.post("/redefinir-senha", authRateLimiter, async (req: Request, res: Respo
       usuario.id
     );
 
-    const { token, refreshToken } = generateTokens(usuario.id, usuario.nivelAcesso);
+    const token = generateToken(usuario.id, usuario.nivelAcesso);
+    const newRefreshToken = refreshToken(usuario.id, usuario.nivelAcesso);
 
     res.json({ 
       success: true,
       data: {
         token,
-        refreshToken
+        refreshToken: newRefreshToken
       },
       message: 'Senha redefinida com sucesso'
     });
@@ -592,10 +620,10 @@ router.post("/redefinir-senha", authRateLimiter, async (req: Request, res: Respo
 });
 
 // Authenticated routes
-router.get("/perfil", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+router.get("/perfil", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const usuario = await prisma.usuario.findUnique({
-      where: { id: req.user.id, deleted: false },
+      where: { id: req.user?.id },
       select: {
         id: true,
         nome: true,
@@ -624,7 +652,7 @@ router.get("/perfil", authenticateToken, async (req: Request & { user?: any }, r
   }
 });
 
-router.put("/perfil", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+router.put("/perfil", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { nome, perguntaSeguranca, respostaSeguranca } = req.body;
 
@@ -636,7 +664,7 @@ router.put("/perfil", authenticateToken, async (req: Request & { user?: any }, r
     }
 
     const usuario = await prisma.usuario.update({
-      where: { id: req.user.id, deleted: false },
+      where: { id: req.user?.id },
       data: updateData,
       select: {
         id: true,
@@ -661,7 +689,7 @@ router.put("/perfil", authenticateToken, async (req: Request & { user?: any }, r
   }
 });
 
-router.put("/alterar-senha", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+router.put("/alterar-senha", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { senhaAtual, novaSenha } = req.body;
 
@@ -682,7 +710,7 @@ router.put("/alterar-senha", authenticateToken, async (req: Request & { user?: a
     }
 
     const usuario = await prisma.usuario.findUnique({
-      where: { id: req.user.id, deleted: false }
+      where: { id: req.user?.id }
     });
 
     if (!usuario || !usuario.senha) {
@@ -726,25 +754,23 @@ router.put("/alterar-senha", authenticateToken, async (req: Request & { user?: a
   }
 });
 
-router.get("/logs", authenticateToken, async (req: Request & { user?: any }, res: Response) => {
+// Route to fetch user logs
+router.get("/logs", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const logs = await prisma.log.findMany({
-      where: { usuarioId: req.user.id },
+      where: { usuarioId: req.user?.id },
       orderBy: { createdAt: 'desc' },
       take: 50
     });
-
-    res.json({ 
+    res.json({
       success: true,
-      data: logs 
+      data: logs
     });
   } catch (error) {
-    handleError(res, error, "fetching user logs");
+    handleError(res, error, "fetching logs");
   }
 });
-
-// Admin-only routes
-router.get("/", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get("/", authenticateJWT, checkPermission(3), async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const usuarios = await prisma.usuario.findMany({
       where: { deleted: false },
@@ -759,22 +785,21 @@ router.get("/", authenticateToken, checkAdmin, async (req: Request & { user?: an
         createdAt: true
       }
     });
-    
-    res.json({ 
+
+    res.json({
       success: true,
-      data: usuarios 
+      data: usuarios
     });
   } catch (error) {
     handleError(res, error, "fetching users");
   }
 });
-
-router.put("/:id", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.put("/:id", authenticateJWT, checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { nivelAcesso, bloqueado } = req.body;
 
     const usuario = await prisma.usuario.update({
-      where: { id: Number(req.params.id), deleted: false },
+      where: { id: Number(req.params.id) },
       data: {
         nivelAcesso,
         bloqueado
@@ -791,8 +816,8 @@ router.put("/:id", authenticateToken, checkAdmin, async (req: Request & { user?:
 
     await logAction(
       'ATUALIZACAO_USUARIO', 
-      `Usuário ${usuario.email} atualizado por ${req.user.email}`,
-      req.user.id
+      `Usuário ${usuario.email} atualizado por ${req.user?.email}`,
+      req.user?.id
     );
 
     res.json({ 
@@ -804,7 +829,7 @@ router.put("/:id", authenticateToken, checkAdmin, async (req: Request & { user?:
   }
 });
 
-router.delete("/:id", authenticateToken, checkAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.delete("/:id", authenticateJWT, checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const usuario = await prisma.usuario.update({
       where: { id: Number(req.params.id) },
@@ -818,8 +843,8 @@ router.delete("/:id", authenticateToken, checkAdmin, async (req: Request & { use
 
     await logAction(
       'EXCLUSAO_USUARIO', 
-      `Usuário ${usuario.email} excluído por ${req.user.email}`,
-      req.user.id
+      `Usuário ${usuario.email} excluído por ${req.user?.email}`,
+      req.user?.id
     );
 
     res.json({ 
@@ -830,66 +855,5 @@ router.delete("/:id", authenticateToken, checkAdmin, async (req: Request & { use
     handleError(res, error, "deleting user");
   }
 });
-
-// Middleware functions
-function authenticateToken(req: Request & { user?: any }, res: Response, next: Function) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ 
-      success: false,
-      error: 'Token de acesso não fornecido' 
-    });
-  }
-
-  jwt.verify(token, JWT_SECRET, async (err: any, decoded: any) => {
-    if (err) {
-      return res.status(403).json({ 
-        success: false,
-        error: 'Token inválido ou expirado' 
-      });
-    }
-    
-    try {
-      const usuario = await prisma.usuario.findUnique({
-        where: { id: decoded.id, deleted: false }
-      });
-
-      if (!usuario || usuario.bloqueado || usuario.status !== 'ATIVO') {
-        return res.status(403).json({ 
-          success: false,
-          error: 'Acesso negado. Conta inativa ou bloqueada.' 
-        });
-      }
-      
-      req.user = {
-        id: usuario.id,
-        email: usuario.email,
-        nivel: usuario.nivelAcesso
-      };
-      next();
-    } catch (error) {
-      res.status(403).json({ 
-        success: false,
-        error: 'Erro ao verificar usuário' 
-      });
-    }
-  });
-}
-
-function checkAdmin(req: Request & { user?: any }, res: Response, next: Function) {
-  if (req.user.nivel < 3) {
-    return res.status(403).json({ 
-      success: false,
-      error: 'Acesso negado. Permissão insuficiente.',
-      data: {
-        requiredLevel: 3,
-        currentLevel: req.user.nivel
-      }
-    });
-  }
-  next();
-}
 
 export default router;

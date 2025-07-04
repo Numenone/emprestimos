@@ -1,6 +1,5 @@
-// src/routes/alunos.ts
-import { PrismaClient } from '@prisma/client';
-import { Router, Request, Response } from 'express';
+import { PrismaClient, Aluno, Emprestimo, Livro } from '@prisma/client';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { 
@@ -9,6 +8,7 @@ import {
   checkPermission,
   refreshToken
 } from '../auth/jwt';
+import { AuthenticatedRequest } from '../types/express';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -18,6 +18,10 @@ dotenv.config();
 const prisma = new PrismaClient();
 const router = Router();
 const SALT_ROUNDS = 10;
+
+interface EmprestimoComLivro extends Emprestimo {
+  livro: Livro | null;
+}
 
 const transporter = nodemailer.createTransport({
   host: process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
@@ -43,7 +47,7 @@ const alunoSchema = z.object({
 });
 
 // Rotas públicas
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", async (req: AuthenticatedRequest, res: Response) => {
   const validation = alunoSchema.safeParse(req.body);
   
   if (!validation.success) {
@@ -112,7 +116,7 @@ router.post("/", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/login", async (req: Request, res: Response) => {
+router.post("/login", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   const { email, senha } = req.body;
 
   if (!email || !senha) {
@@ -209,7 +213,7 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/ativar", async (req: Request, res: Response) => {
+router.post("/ativar", async (req: AuthenticatedRequest, res: Response) => {
   const { email, codigo } = req.body;
   
   if (!email || !codigo) {
@@ -259,7 +263,7 @@ router.post("/ativar", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/recuperar-senha", async (req: Request, res: Response) => {
+router.post("/recuperar-senha", async (req: AuthenticatedRequest, res: Response) => {
   const { email } = req.body;
   
   if (!email) {
@@ -316,7 +320,7 @@ router.post("/recuperar-senha", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/redefinir-senha", async (req: Request, res: Response) => {
+router.post("/redefinir-senha", async (req: AuthenticatedRequest, res: Response) => {
   const { email, codigo, novaSenha } = req.body;
   
   if (!email || !codigo || !novaSenha) {
@@ -374,7 +378,7 @@ router.post("/redefinir-senha", async (req: Request, res: Response) => {
   }
 });
 
-router.post("/redefinir-senha-pergunta", async (req: Request, res: Response) => {
+router.post("/redefinir-senha-pergunta", async (req: AuthenticatedRequest, res: Response) => {
   const { email, resposta, novaSenha } = req.body;
   
   if (!email || !resposta || !novaSenha) {
@@ -434,7 +438,10 @@ router.post("/redefinir-senha-pergunta", async (req: Request, res: Response) => 
 });
 
 // Rotas protegidas
-router.get("/perfil", authenticateJWT, async (req: Request, res: Response) => {
+router.get("/perfil", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.aluno) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     const aluno = await prisma.aluno.findUnique({
       where: { id: req.aluno.id, deleted: false },
@@ -461,7 +468,7 @@ router.get("/perfil", authenticateJWT, async (req: Request, res: Response) => {
   }
 });
 
-router.put("/perfil", authenticateJWT, async (req: Request, res: Response) => {
+router.put("/perfil", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   const { nome, perguntaSeguranca, respostaSeguranca } = req.body;
 
   try {
@@ -473,7 +480,7 @@ router.put("/perfil", authenticateJWT, async (req: Request, res: Response) => {
     }
 
     const aluno = await prisma.aluno.update({
-      where: { id: req.aluno.id, deleted: false },
+      where: { id: req.aluno?.id, deleted: false },
       data: updateData,
       select: {
         id: true,
@@ -498,7 +505,7 @@ router.put("/perfil", authenticateJWT, async (req: Request, res: Response) => {
   }
 });
 
-router.put("/alterar-senha", authenticateJWT, async (req: Request, res: Response) => {
+router.put("/alterar-senha", authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   const { senhaAtual, novaSenha } = req.body;
 
   if (!senhaAtual || !novaSenha) {
@@ -515,7 +522,7 @@ router.put("/alterar-senha", authenticateJWT, async (req: Request, res: Response
     }
 
     const aluno = await prisma.aluno.findUnique({
-      where: { id: req.aluno.id, deleted: false }
+      where: { id: req.aluno?.id, deleted: false }
     });
 
     if (!aluno || !aluno.senha) {
@@ -555,10 +562,10 @@ router.put("/alterar-senha", authenticateJWT, async (req: Request, res: Response
   }
 });
 
-router.get("/logs", authenticateJWT, checkPermission(3), async (req: Request, res: Response) => {
+router.get("/logs", authenticateJWT, checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const logs = await prisma.log.findMany({
-      where: { alunoId: req.aluno.id },
+      where: { alunoId: req.aluno?.id },
       orderBy: { createdAt: 'desc' },
       take: 50
     });
@@ -569,7 +576,7 @@ router.get("/logs", authenticateJWT, checkPermission(3), async (req: Request, re
   }
 });
 
-router.post("/backup", authenticateJWT, checkPermission(3), async (req: Request, res: Response) => {
+router.post("/backup", authenticateJWT, checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const backupDir = path.join(__dirname, '../../backups');
     if (!fs.existsSync(backupDir)) {
@@ -588,8 +595,8 @@ router.post("/backup", authenticateJWT, checkPermission(3), async (req: Request,
     await prisma.log.create({
       data: {
         acao: 'BACKUP',
-        detalhes: `Backup realizado por ${req.aluno.email}`,
-        alunoId: req.aluno.id
+        detalhes: `Backup realizado por ${req.aluno?.email}`,
+        alunoId: req.aluno?.id
       }
     });
 
@@ -603,7 +610,7 @@ router.post("/backup", authenticateJWT, checkPermission(3), async (req: Request,
   }
 });
 
-router.delete("/:id", authenticateJWT, checkPermission(3), async (req: Request, res: Response) => {
+router.delete("/:id", authenticateJWT, checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const aluno = await prisma.aluno.update({
       where: { id: Number(req.params.id) },
@@ -618,8 +625,8 @@ router.delete("/:id", authenticateJWT, checkPermission(3), async (req: Request, 
     await prisma.log.create({
       data: {
         acao: 'EXCLUSAO_ALUNO',
-        detalhes: `Aluno ${aluno.email} excluído por ${req.aluno.email}`,
-        alunoId: req.aluno.id
+        detalhes: `Aluno ${aluno.email} excluído por ${req.aluno?.email}`,
+        alunoId: req.aluno?.id
       }
     });
 
@@ -633,40 +640,40 @@ router.delete("/:id", authenticateJWT, checkPermission(3), async (req: Request, 
 });
 
 // Função auxiliar para gerar HTML do email
-function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
-  return `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
-      <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
+// function generateEmailHtml(aluno: Aluno & { emprestimos: EmprestimoComLivro[] }): string {
+//   return `
+//     <div style="font-family: Arial, sans-serif; padding: 20px;">
+//       <h2 style="color: #2c3e50;">Histórico de Empréstimos Ativos</h2>
+//       <p>Aluno: <strong>${aluno.nome}</strong> (Matrícula: ${aluno.matricula})</p>
       
-      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-        <thead>
-          <tr style="background-color: #f8f9fa;">
-            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
-            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
-            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
-            <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${aluno.emprestimos.map((emp: EmprestimoComLivro) => {
-            const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
-            return `
-              <tr>
-                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #ddd;">
-                  ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
+//       <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+//         <thead>
+//           <tr style="background-color: #f8f9fa;">
+//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Livro</th>
+//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Autor</th>
+//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Empréstimo</th>
+//             <th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Data Devolução</th>
+//           </tr>
+//         </thead>
+//         <tbody>
+//           ${aluno.emprestimos.map((emp: EmprestimoComLivro) => {
+//             const livro = emp.livro ?? { titulo: 'Livro não encontrado', autor: 'N/A', quantidade: 0 };
+//             return `
+//               <tr>
+//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.titulo}</td>
+//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${livro.autor}</td>
+//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">${new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR')}</td>
+//                 <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+//                   ${emp.dataDevolucao ? new Date(emp.dataDevolucao).toLocaleDateString('pt-BR') : 'Pendente'}
+//                 </td>
+//               </tr>
+//             `;
+//           }).join('')}
+//         </tbody>
+//       </table>
+//     </div>
+//   `;
+// }
 
 // Encerramento correto do Prisma
 process.on('SIGTERM', async () => {

@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction, Request } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { AuthenticatedRequest as CustomAuthenticatedRequest } from '../types/express';
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'default_secret_please_change_in_production';
@@ -24,15 +25,12 @@ export const refreshToken = (userId: number, nivelAcesso: number): string => {
   });
 };
 
-interface AuthenticatedRequest extends Request {
-  aluno?: any;
-  user?: any;
-}
+// Extend AuthenticatedRequest from Express Request to ensure headers property exists
+type AuthenticatedRequest = CustomAuthenticatedRequest & Request;
 
 export const authenticateJWT = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader?.split(' ')[1];
-
   if (!token) {
     return res.status(401).json({ error: 'Token de acesso não fornecido' });
   }
