@@ -1,4 +1,5 @@
 import express from 'express';
+import bodyParser from 'body-parser';
 import cors from 'cors';
 import path from 'path';
 import { PrismaClient } from '@prisma/client';
@@ -11,10 +12,12 @@ import fs from 'fs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { AuthenticatedRequest } from './types/express';
 
 const prisma = new PrismaClient();
 const app = express();
+app.use(bodyParser.json());
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Enhanced security middleware
@@ -95,7 +98,7 @@ app.use('/livros', authenticateJWT, livrosRouter);
 app.use('/emprestimos', authenticateJWT, emprestimosRouter);
 
 // Status route
-app.get('/status', (req, res) => {
+app.get('/status', (_req, res) => {
   res.json({ 
     status: 'online',
     timestamp: new Date().toISOString(),
@@ -110,7 +113,7 @@ app.get('/status', (req, res) => {
 });
 
 // Backup route with admin permission check
-app.post('/backup', authenticateJWT, async (req, res) => {
+app.post('/backup', authenticateJWT, async (req: AuthenticatedRequest, res) => {
   try {
     // Check if user has admin privileges
     const user = req.user || req.aluno;
@@ -127,10 +130,10 @@ app.post('/backup', authenticateJWT, async (req, res) => {
 
     const backupFile = path.join(backupDir, `backup-${Date.now()}.json`);
     const backupData = {
-      alunos: await prisma.aluno.findMany({ where: { deleted: false } }),
-      livros: await prisma.livro.findMany({ where: { deleted: false } }),
-      emprestimos: await prisma.emprestimo.findMany({ where: { deleted: false } }),
-      usuarios: await prisma.usuario.findMany({ where: { deleted: false } }),
+      alunos: await prisma.aluno.findMany(),
+      livros: await prisma.livro.findMany(),
+      emprestimos: await prisma.emprestimo.findMany(),
+      usuarios: await prisma.usuario.findMany(),
       logs: await prisma.log.findMany()
     };
 
@@ -158,7 +161,7 @@ app.post('/backup', authenticateJWT, async (req, res) => {
 });
 
 // Restore route with admin permission check
-app.post('/restore', authenticateJWT, async (req, res) => {
+app.post('/restore', authenticateJWT, async (req: AuthenticatedRequest, res) => {
   try {
     // Check if user has admin privileges
     const user = req.user || req.aluno;
@@ -219,9 +222,9 @@ app.post('/restore', authenticateJWT, async (req, res) => {
 });
 
 // Enhanced error handling
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+app.use((err: Error, req: any, res: Response, _next: NextFunction) => {
   console.error(err.stack);
-  
+
   // Log the error
   prisma.log.create({
     data: {
@@ -230,20 +233,20 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
       usuarioId: req.user?.id,
       alunoId: req.aluno?.id
     }
-  }).catch(logError => console.error('Failed to log error:', logError));
+  }).catch((logError: unknown) => console.error('Failed to log error:', logError));
 
   // Security headers for error responses
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  
+
   res.status(500).json({ 
     error: 'Erro interno do servidor',
-    requestId: req.id
+    requestId: req.id ?? null
   });
 });
 
 // Security headers middleware
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');

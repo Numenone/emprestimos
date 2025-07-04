@@ -1,21 +1,13 @@
 import { PrismaClient } from '@prisma/client';
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { z } from 'zod';
 import { authenticateJWT, checkPermission } from '../auth/jwt';
+import { AuthenticatedRequest } from '../types/express';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: number;
-    email: string;
-    nivel: number;
-  };
-}
-
 router.use(authenticateJWT);
-
 
 const livroSchema = z.object({
   titulo: z.string().min(3, "Título deve ter pelo menos 3 caracteres"),
@@ -24,7 +16,7 @@ const livroSchema = z.object({
 });
 
 // GET todos os livros (não deletados)
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   try {
     const livros = await prisma.livro.findMany({
       where: { deleted: false },
@@ -54,7 +46,7 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 // POST criar livro (apenas admin)
-router.post("/", checkPermission(2), async (req: Request, res: Response) => {
+router.post("/", checkPermission(2), async (req: AuthenticatedRequest, res: Response) => {
   const validation = livroSchema.safeParse(req.body);
   
   if (!validation.success) {
@@ -92,7 +84,7 @@ router.post("/", checkPermission(2), async (req: Request, res: Response) => {
 });
 
 // DELETE livro (soft delete, apenas admin)
-router.delete("/:id", checkPermission(3), async (req: Request, res: Response) => {
+router.delete("/:id", checkPermission(3), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const livro = await prisma.livro.update({
       where: { id: Number(req.params.id) },
@@ -128,7 +120,7 @@ router.delete("/:id", checkPermission(3), async (req: Request, res: Response) =>
 });
 
 // PUT atualizar livro completo
-router.put("/:id", checkPermission(2), async (req: Request, res: Response) => {
+router.put("/:id", checkPermission(2), async (req: AuthenticatedRequest, res: Response) => {
   const id = Number(req.params.id);
   if (isNaN(id) || id <= 0) {
     return res.status(400).json({ success: false, error: "ID inválido" });

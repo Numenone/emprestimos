@@ -13,7 +13,7 @@
       <h1>Biblioteca Digital</h1>
       <div id="authControls">
         <% if (typeof user !== 'undefined' && user) { %>
-          <span>Bem-vindo, <%= user.nome %> (Nível <%= user.nivelAcesso %>)</span>
+          <span>Bem-vindo, <%= escapeHtml(user.nome) %> (Nível <%= escapeHtml(user.nivelAcesso) %>)</span>
           <button onclick="logout()">Sair</button>
         <% } else { %>
           <button onclick="showModal('loginModal')">Login</button>
@@ -77,7 +77,7 @@
                     <% if (user.nivelAcesso >= 3) { %>
                       <button onclick="deleteAluno('<%= aluno.id %>')">Excluir</button>
                     <% } %>
-                    <button onclick="enviarEmailAluno('<%= aluno.id %>', '<%= escapeHtml(aluno.email) %>')">Enviar E-mail</button>
+                    <button onclick="enviarEmailAluno('<%= aluno.id %>', '<%= aluno.email %>')">Enviar E-mail</button>
                   </td>
                 </tr>
               <% }); %>
@@ -153,7 +153,7 @@
             </thead>
             <tbody>
               <% emprestimos.forEach(emp => { %>
-                <tr class="<%= emp.dataDevolucao < new Date() && !emp.devolvido ? 'atrasado' : '' %>">
+                <tr class="<%= new Date(emp.dataDevolucao).getTime() < Date.now() && !emp.devolvido ? 'atrasado' : '' %>">
                   <td><%= emp.aluno?.nome %></td>
                   <td><%= emp.livro?.titulo %></td>
                   <td><%= new Date(emp.dataEmprestimo).toLocaleDateString('pt-BR') %></td>
@@ -298,8 +298,12 @@
     </div>
 
     <script>
+      // Make user available to client-side JS
+      window.user = <%= typeof user !== 'undefined' && user ? JSON.stringify(user) : 'null' %>;
+
       // Utility functions
       function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') unsafe = String(unsafe ?? '');
         return unsafe
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
@@ -413,7 +417,7 @@
 
           const data = await response.json();
           localStorage.setItem('token', data.token);
-          localStorage.setItem('refreshToken', data.refresh);
+          localStorage.setItem('refreshToken', data.refreshToken);
           
           window.location.href = '/';
         } catch (error) {
@@ -532,7 +536,7 @@
               <td>${escapeHtml(user.nome)}</td>
               <td>${escapeHtml(user.email)}</td>
               <td>
-                <select id="level-${user.id}" onchange="updateUserLevel(${user.id})">
+                <select id="level-<%= encodeURIComponent(user.id) %>" onchange="updateUserLevel('<%= encodeURIComponent(user.id) %>')">
                   <option value="1" ${user.nivelAcesso === 1 ? 'selected' : ''}>Usuário</option>
                   <option value="2" ${user.nivelAcesso === 2 ? 'selected' : ''}>Moderador</option>
                   <option value="3" ${user.nivelAcesso === 3 ? 'selected' : ''}>Admin</option>
@@ -563,10 +567,11 @@
       }
 
       async function updateUserLevel(userId) {
+        const decodedId = decodeURIComponent(userId);
         const newLevel = document.getElementById(`level-${userId}`).value;
         
         try {
-          const response = await fetchWithAuth(`/usuarios/${userId}`, {
+          const response = await fetchWithAuth(`/usuarios/${decodedId}`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
@@ -755,7 +760,12 @@
         const form = e.target;
         
         try {
-          const dataDevolucao = new Date(form.dataDevolucao.value);
+          const dataDevolucaoStr = form.dataDevolucao.value;
+          // Check if not empty and matches YYYY-MM-DD
+          if (!dataDevolucaoStr || !/^\d{4}-\d{2}-\d{2}$/.test(dataDevolucaoStr)) {
+            throw new Error('Data de devolução inválida. Use o formato AAAA-MM-DD.');
+          }
+          const dataDevolucao = new Date(dataDevolucaoStr);
           if (isNaN(dataDevolucao.getTime())) {
             throw new Error('Data de devolução inválida');
           }
@@ -936,9 +946,10 @@
         }
       }
 
-      // Initialize on load
       document.addEventListener('DOMContentLoaded', () => {
-        checkAuthStatus();
+        if (localStorage.getItem('token')) {
+          checkAuthStatus();
+        }
         
         // If user is admin, load users for management
         if (typeof user !== 'undefined' && user && user.nivelAcesso >= 3) {
